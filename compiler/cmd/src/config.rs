@@ -56,6 +56,7 @@ pub struct CompileOptions {
 }
 
 static EUNOMIA_HOME_ENV: &str = "EUNOMIA_HOME";
+static FHS_EUNOMIA_HOME_ENTRY: &str = "/usr/share/eunomia";
 
 /// Get home directory from env
 pub fn get_eunomia_home() -> Result<String> {
@@ -67,7 +68,10 @@ pub fn get_eunomia_home() -> Result<String> {
                 let home = home.join(".eunomia");
                 Ok(home.to_str().unwrap().to_string())
             }
-            None => Err(anyhow::anyhow!("HOME is not found")),
+            None => match path::Path::new(FHS_EUNOMIA_HOME_ENTRY).exists() {
+                true => Ok(FHS_EUNOMIA_HOME_ENTRY.to_string()),
+                false => Err(anyhow::anyhow!("HOME is not found")),
+            },
         },
     }
 }
