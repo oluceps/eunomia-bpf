@@ -99,11 +99,11 @@ impl TempDir {
     // }
 }
 
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(self.path());
-    }
-}
+// impl Drop for TempDir {
+//     fn drop(&mut self) {
+//         let _ = fs::remove_dir_all(self.path());
+//     }
+// }
 
 /// Get output path for json: output.meta.json
 pub fn get_output_config_path(args: &CompileOptions) -> String {
