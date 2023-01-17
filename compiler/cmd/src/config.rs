@@ -1,10 +1,10 @@
-use std::{fs, path};
+use std::{env, fs, io, path};
 
 use anyhow::Result;
 use clap::Parser;
 use rust_embed::RustEmbed;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// The eunomia-bpf compile tool
 ///
@@ -55,27 +55,53 @@ pub struct CompileOptions {
     pub yaml: bool,
 }
 
-static EUNOMIA_HOME_ENV: &str = "EUNOMIA_HOME";
-static FHS_EUNOMIA_HOME_ENTRY: &str = "/usr/share/eunomia";
+pub struct TempDir {
+    path: Box<Path>,
+}
 
-/// Get home directory from env
-pub fn get_eunomia_home() -> Result<String> {
-    let eunomia_home = std::env::var(EUNOMIA_HOME_ENV);
-    match eunomia_home {
-        Ok(home) => Ok(home),
-        Err(_) => match home::home_dir() {
-            Some(home) => {
-                let home = home.join(".eunomia");
-                Ok(home.to_str().unwrap().to_string())
-            }
-            None => {
-                if path::Path::new(FHS_EUNOMIA_HOME_ENTRY).exists() {
-                    Ok(FHS_EUNOMIA_HOME_ENTRY.to_string())
-                } else {
-                    Err(anyhow::anyhow!("HOME is not found"))
-                }
-            }
-        },
+fn create(path: PathBuf) -> io::Result<TempDir> {
+    match fs::create_dir(&path) {
+        // exist, also return the path
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Ok(TempDir {
+            path: path.into_boxed_path(),
+        }),
+        Ok(i) => Ok(i).map(|_| TempDir {
+            path: path.into_boxed_path(),
+        }),
+        _ => Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "Cannot create temporary dir",
+        )),
+    }
+}
+
+impl TempDir {
+    /// create a temp directory
+    pub fn new() -> io::Result<TempDir> {
+        let tmp_dir_from_env = &env::temp_dir();
+        let path = tmp_dir_from_env.join("eunomia");
+
+        create(path)
+    }
+
+    pub fn path(&self) -> &Path {
+        self.path.as_ref()
+    }
+
+    // pub fn close(mut self) -> io::Result<()> {
+    //     let result = fs::remove_dir_all(self.path());
+
+    //     self.path = PathBuf::new().into_boxed_path();
+
+    //     mem::forget(self);
+
+    //     result
+    // }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(self.path());
     }
 }
 
@@ -144,8 +170,8 @@ pub fn get_target_arch(args: &CompileOptions) -> Result<String> {
 
 /// Get eunomia home include dirs
 pub fn get_eunomia_include(args: &CompileOptions) -> Result<String> {
-    let eunomia_home = get_eunomia_home()?;
-    let eunomia_include = path::Path::new(&eunomia_home);
+    let eunomia_tmp_workspace = Into::<PathBuf>::into(TempDir::new().unwrap().path());
+    let eunomia_include = path::Path::new(&eunomia_tmp_workspace);
     let eunomia_include = match eunomia_include.canonicalize() {
         Ok(path) => path,
         Err(e) => {
@@ -166,8 +192,8 @@ pub fn get_eunomia_include(args: &CompileOptions) -> Result<String> {
 
 /// Get eunomia bpftool path
 pub fn get_bpftool_path() -> Result<String> {
-    let eunomia_home = get_eunomia_home()?;
-    let eunomia_bin = path::Path::new(&eunomia_home).join("bin");
+    let eunomia_tmp_workspace = Into::<PathBuf>::into(TempDir::new().unwrap().path());
+    let eunomia_bin = eunomia_tmp_workspace.join("bin");
     let bpftool = eunomia_bin.join("bpftool");
     let bpftool = match bpftool.canonicalize() {
         Ok(path) => path,
@@ -177,11 +203,11 @@ pub fn get_bpftool_path() -> Result<String> {
             ))
         }
     };
-    let f = std::fs::File::open(&bpftool)?;
+    let f = fs::File::open(&bpftool)?;
     let metadata = f.metadata()?;
     let mut permissions = metadata.permissions();
     permissions.set_mode(0o744);
-    std::fs::set_permissions(&bpftool, permissions)?;
+    fs::set_permissions(&bpftool, permissions)?;
     Ok(bpftool.to_str().unwrap().to_string())
 }
 
@@ -209,21 +235,19 @@ pub fn get_base_dir_include(source_path: &str) -> Result<String> {
 #[folder = "../workspace/"]
 struct Workspace;
 
-pub fn create_eunomia_home() -> Result<()> {
-    let eunomia_home_path = get_eunomia_home()?;
-    if !Path::new(&eunomia_home_path).exists() {
-        std::fs::create_dir_all(&eunomia_home_path)?;
-        println!("creating eunomia home dir: {}", eunomia_home_path);
-        for file in Workspace::iter() {
-            let file_path = format!("{}/{}", eunomia_home_path, file.as_ref());
-            let file_dir = Path::new(&file_path).parent().unwrap();
-            if !file_dir.exists() {
-                std::fs::create_dir_all(file_dir)?;
-            }
-            let content = Workspace::get(file.as_ref()).unwrap();
-            std::fs::write(&file_path, content.data.as_ref())?;
-            println!("creating file: {}", file_path);
+pub fn init_eunomia_workspace() -> Result<()> {
+    let eunomia_tmp_workspace = Into::<PathBuf>::into(TempDir::new().unwrap().path());
+
+    // fs::create_dir_all(&eunomia_home_path)?;
+    for file in Workspace::iter() {
+        let file_path = eunomia_tmp_workspace.join(file.as_ref());
+        let file_dir = Path::new(&file_path).parent().unwrap();
+        if !file_dir.exists() {
+            fs::create_dir_all(file_dir)?;
         }
+        let content = Workspace::get(file.as_ref()).unwrap();
+        fs::write(&file_path, content.data.as_ref())?;
+        println!("creating file: {}", file_path.to_str().unwrap());
     }
     Ok(())
 }
@@ -250,40 +274,8 @@ mod test {
     }
 
     #[test]
-    fn test_get_eunomia_home() {
-        let eunomia_home_from_env = std::env::var(EUNOMIA_HOME_ENV);
-        let eunomia_home_from_home = home::home_dir().unwrap();
-
-        match eunomia_home_from_env {
-            Ok(path) => assert_eq!(get_eunomia_home().unwrap(), path),
-            Err(_) => {
-                if get_eunomia_home().is_err() {
-                    assert!(true)
-                }
-
-                if eunomia_home_from_home.exists() {
-                    assert_eq!(
-                        get_eunomia_home().unwrap(),
-                        eunomia_home_from_home
-                            .join(".eunomia")
-                            .into_os_string()
-                            .into_string()
-                            .unwrap()
-                    );
-                } else {
-                    assert_eq!(
-                        get_eunomia_home().unwrap(),
-                        FHS_EUNOMIA_HOME_ENTRY.to_string()
-                    )
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn test_create_eunomia_home() {
-        create_eunomia_home().unwrap();
-        let home = get_eunomia_home().unwrap();
-        assert!(Path::new(&home).exists());
+    fn test_init_eunomia_workspace() {
+        let eunomia_tmp_workspace = Into::<PathBuf>::into(TempDir::new().unwrap().path());
+        assert_eq!(env::temp_dir().join("eunomia"), eunomia_tmp_workspace);
     }
 }
