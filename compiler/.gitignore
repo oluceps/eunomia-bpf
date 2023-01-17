@@ -16,3 +16,4 @@ cmd/rust-clippy-results.sarif
 *.profraw
 cmd/lcov.info
 cmd/coverage
+cmd/tmp_test_event.c
