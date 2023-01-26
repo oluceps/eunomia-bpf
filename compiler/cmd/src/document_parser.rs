@@ -6,17 +6,19 @@ use crate::config::*;
 use anyhow::anyhow;
 use anyhow::Result;
 use clang::{documentation::CommentChild, *};
+use eunomia_rs::TempDir;
 use serde_json::{json, Value};
 
 fn parse_source_files<'a>(
     index: &'a Index<'a>,
     args: &'a CompileOptions,
     source_path: &'a str,
+    tmp_workspace: &'a TempDir,
 ) -> Result<TranslationUnit<'a>> {
     let bpf_sys_include = get_bpf_sys_include(args)?;
     let target_arch = get_target_arch(args)?;
     let target_arch = String::from("-D__TARGET_ARCH_") + &target_arch;
-    let eunomia_include = get_eunomia_include(args)?;
+    let eunomia_include = get_eunomia_include(args, tmp_workspace)?;
     let base_dir_include = get_base_dir_include(source_path)?;
     let mut compile_args = vec!["-g", "-O2", "-target bpf", &target_arch];
     compile_args.append(&mut bpf_sys_include.split(' ').collect::<Vec<&str>>());
@@ -223,6 +225,7 @@ pub fn parse_source_documents(
     args: &CompileOptions,
     source_path: &str,
     bpf_skel_json: Value,
+    tmp_workspace: &TempDir,
 ) -> Result<Value> {
     // Acquire an instance of `Clang`
     let clang = match Clang::new() {
@@ -235,7 +238,12 @@ pub fn parse_source_documents(
     let index = Index::new(&clang, false, true);
     let _source_path = Path::new(source_path);
     let canonic_source_path = _source_path.canonicalize().unwrap();
-    let tu = parse_source_files(&index, args, canonic_source_path.to_str().unwrap())?;
+    let tu = parse_source_files(
+        &index,
+        args,
+        canonic_source_path.to_str().unwrap(),
+        tmp_workspace,
+    )?;
 
     // Get the entities in this translation unit
     let entities = tu
@@ -263,13 +271,17 @@ pub fn parse_source_documents(
 #[cfg(test)]
 mod test {
     use super::*;
-    const SOURCE_PATH: &str = "./compiler/cmd/test/client.bpf.c";
+    const SOURCE_PATH: &str = "/tmp/test/client.bpf.c";
 
     #[test]
     fn test_parse_variables() {
         let args = CompileOptions {
             ..Default::default()
         };
+
+        let tmp_workspace = TempDir::new().unwrap();
+        init_eunomia_workspace(&tmp_workspace).unwrap();
+
         let test_case_res = json!({
             "name": ".rodata",
             "variables": [
@@ -309,6 +321,7 @@ mod test {
                 }
             ],
             "maps":[], "progs":[]}),
+            &tmp_workspace,
         );
         let skel = match skel {
             Ok(skel) => skel,
@@ -330,6 +343,8 @@ mod test {
         let args = CompileOptions {
             ..Default::default()
         };
+        let tmp_workspace = TempDir::new().unwrap();
+        init_eunomia_workspace(&tmp_workspace).unwrap();
         let test_case_res = json!([{
             "attach": "tp/sched/sched_process_exec",
             "link": true,
@@ -357,6 +372,7 @@ mod test {
                     "name": "handle_exit"
                 }
             ],"maps":[], "data_sections":[]}),
+            &tmp_workspace,
         );
         let skel = match skel {
             Ok(skel) => skel,
@@ -384,6 +400,9 @@ mod test {
             "sample": {"interval": 1000}
         });
 
+        let tmp_workspace = TempDir::new().unwrap();
+        init_eunomia_workspace(&tmp_workspace).unwrap();
+
         let skel = parse_source_documents(
             &args,
             SOURCE_PATH,
@@ -393,6 +412,7 @@ mod test {
                     "name": "exec_start",
                 }
             ], "progs":[], "data_sections":[]}),
+            &tmp_workspace,
         );
         let skel = match skel {
             Ok(skel) => skel,
@@ -414,6 +434,8 @@ mod test {
         let args = CompileOptions {
             ..Default::default()
         };
-        let _ = parse_source_documents(&args, SOURCE_PATH, json!({}));
+        let tmp_workspace = TempDir::new().unwrap();
+        init_eunomia_workspace(&tmp_workspace).unwrap();
+        let _ = parse_source_documents(&args, SOURCE_PATH, json!({}), &tmp_workspace);
     }
 }

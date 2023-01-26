@@ -2,7 +2,7 @@ use std::{fs, path};
 
 use anyhow::Result;
 use clap::Parser;
-use eunomia_rs::get_eunomia_home;
+use eunomia_rs::TempDir;
 use rust_embed::RustEmbed;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -120,9 +120,9 @@ pub fn get_target_arch(args: &CompileOptions) -> Result<String> {
 }
 
 /// Get eunomia home include dirs
-pub fn get_eunomia_include(args: &CompileOptions) -> Result<String> {
-    let eunomia_home = get_eunomia_home()?;
-    let eunomia_include = path::Path::new(&eunomia_home);
+pub fn get_eunomia_include(args: &CompileOptions, tmp_workspace: &TempDir) -> Result<String> {
+    let eunomia_tmp_workspace = tmp_workspace.path();
+    let eunomia_include = path::Path::new(&eunomia_tmp_workspace);
     let eunomia_include = match eunomia_include.canonicalize() {
         Ok(path) => path,
         Err(e) => {
@@ -142,9 +142,9 @@ pub fn get_eunomia_include(args: &CompileOptions) -> Result<String> {
 }
 
 /// Get eunomia bpftool path
-pub fn get_bpftool_path() -> Result<String> {
-    let eunomia_home = get_eunomia_home()?;
-    let eunomia_bin = path::Path::new(&eunomia_home).join("bin");
+pub fn get_bpftool_path(tmp_workspace: &TempDir) -> Result<String> {
+    let eunomia_tmp_workspace = tmp_workspace.path();
+    let eunomia_bin = path::Path::new(&eunomia_tmp_workspace).join("bin");
     let bpftool = eunomia_bin.join("bpftool");
     let bpftool = match bpftool.canonicalize() {
         Ok(path) => path,
@@ -186,22 +186,28 @@ pub fn get_base_dir_include(source_path: &str) -> Result<String> {
 #[folder = "../workspace/"]
 struct Workspace;
 
-pub fn create_eunomia_home() -> Result<()> {
-    let eunomia_home_path = get_eunomia_home()?;
-    if !Path::new(&eunomia_home_path).exists() {
-        std::fs::create_dir_all(&eunomia_home_path)?;
-        println!("creating eunomia home dir: {}", eunomia_home_path);
-        for file in Workspace::iter() {
-            let file_path = format!("{}/{}", eunomia_home_path, file.as_ref());
-            let file_dir = Path::new(&file_path).parent().unwrap();
-            if !file_dir.exists() {
-                std::fs::create_dir_all(file_dir)?;
-            }
-            let content = Workspace::get(file.as_ref()).unwrap();
-            std::fs::write(&file_path, content.data.as_ref())?;
-            println!("creating file: {}", file_path);
+pub fn init_eunomia_workspace(tmp_workspace: &TempDir) -> Result<()> {
+    let eunomia_tmp_workspace = tmp_workspace.path();
+
+    println!(
+        "Initializing eunomia workspace dir: {:?}",
+        &eunomia_tmp_workspace
+    );
+
+    for file in Workspace::iter() {
+        let file_path = format!(
+            "{}/{}",
+            eunomia_tmp_workspace.to_string_lossy(),
+            file.as_ref()
+        );
+        let file_dir = Path::new(&file_path).parent().unwrap();
+        if !file_dir.exists() {
+            std::fs::create_dir_all(file_dir)?;
         }
+        let content = Workspace::get(file.as_ref()).unwrap();
+        std::fs::write(&file_path, content.data.as_ref())?;
     }
+
     Ok(())
 }
 
@@ -209,7 +215,6 @@ pub fn create_eunomia_home() -> Result<()> {
 mod test {
     use super::*;
     use clap::Parser;
-    use eunomia_rs::get_eunomia_home;
 
     #[test]
     fn test_parse_args() {
@@ -228,9 +233,11 @@ mod test {
     }
 
     #[test]
-    fn test_create_eunomia_home() {
-        create_eunomia_home().unwrap();
-        let home = get_eunomia_home().unwrap();
-        assert!(Path::new(&home).exists());
+    fn test_init_eunomia_workspace() {
+        let tmp_workspace = TempDir::new().unwrap();
+        init_eunomia_workspace(&tmp_workspace).unwrap();
+        // check if workspace and file successfully created
+        let bpftool_path = tmp_workspace.path().join("bin/bpftool");
+        assert!(bpftool_path.exists());
     }
 }

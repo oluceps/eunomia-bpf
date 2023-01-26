@@ -1,6 +1,7 @@
 use crate::document_parser::*;
 use crate::{config::*, export_types::*};
 use anyhow::Result;
+use eunomia_rs::TempDir;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 use serde_json::{json, Value};
@@ -19,7 +20,12 @@ fn parse_json_output(output: &str) -> Result<Value> {
 }
 
 /// compile bpf object
-fn compile_bpf_object(args: &CompileOptions, source_path: &str, output_path: &str) -> Result<()> {
+fn compile_bpf_object(
+    args: &CompileOptions,
+    source_path: &str,
+    output_path: &str,
+    tmp_workspace: &TempDir,
+) -> Result<()> {
     let bpf_sys_include = get_bpf_sys_include(args)?;
     let target_arch = get_target_arch(args)?;
 
@@ -28,7 +34,7 @@ fn compile_bpf_object(args: &CompileOptions, source_path: &str, output_path: &st
         args.clang_bin,
         target_arch,
         bpf_sys_include,
-        get_eunomia_include(args)?,
+        get_eunomia_include(args, tmp_workspace)?,
         args.additional_cflags,
         get_base_dir_include(source_path)?,
         source_path,
@@ -52,8 +58,12 @@ fn compile_bpf_object(args: &CompileOptions, source_path: &str, output_path: &st
 }
 
 /// get the skel as json object
-fn get_bpf_skel_json(object_path: &String, args: &CompileOptions) -> Result<String> {
-    let bpftool_bin = get_bpftool_path()?;
+fn get_bpf_skel_json(
+    object_path: &String,
+    args: &CompileOptions,
+    tmp_workspace: &TempDir,
+) -> Result<String> {
+    let bpftool_bin = get_bpftool_path(tmp_workspace)?;
     let command = format!("{} gen skeleton {} -j", bpftool_bin, object_path);
     let (code, output, error) = run_script::run_script!(command).unwrap();
     if code != 0 {
@@ -67,8 +77,12 @@ fn get_bpf_skel_json(object_path: &String, args: &CompileOptions) -> Result<Stri
 }
 
 /// get the export typs as json object
-fn get_export_types_json(args: &CompileOptions, output_bpf_object_path: &String) -> Result<String> {
-    let bpftool_bin = get_bpftool_path()?;
+fn get_export_types_json(
+    args: &CompileOptions,
+    output_bpf_object_path: &String,
+    tmp_workspace: &TempDir,
+) -> Result<String> {
+    let bpftool_bin = get_bpftool_path(tmp_workspace)?;
     let command = format!(
         "{} btf dump file {} format c -j",
         bpftool_bin, output_bpf_object_path
@@ -98,34 +112,44 @@ fn get_export_types_json(args: &CompileOptions, output_bpf_object_path: &String)
 }
 
 /// do actual work for compiling
-fn do_compile(args: &CompileOptions, temp_source_file: &str) -> Result<()> {
+fn do_compile(
+    args: &CompileOptions,
+    temp_source_file: &str,
+    tmp_workspace: &TempDir,
+) -> Result<()> {
     let output_bpf_object_path = get_output_object_path(args);
     let output_json_path = get_output_config_path(args);
     let mut meta_json = json!({});
 
     // compile bpf object
     println!("Compiling bpf object...");
-    compile_bpf_object(args, temp_source_file, &output_bpf_object_path)?;
-    let bpf_skel_json = get_bpf_skel_json(&output_bpf_object_path, args)?;
+    compile_bpf_object(
+        args,
+        temp_source_file,
+        &output_bpf_object_path,
+        tmp_workspace,
+    )?;
+    let bpf_skel_json = get_bpf_skel_json(&output_bpf_object_path, args, tmp_workspace)?;
     let bpf_skel = parse_json_output(&bpf_skel_json)?;
-    let bpf_skel_with_doc = match parse_source_documents(args, &args.source_path, bpf_skel.clone())
-    {
-        Ok(v) => v,
-        Err(e) => {
-            if e.to_string()
-                != "Failed to create Clang instance: an instance of `Clang` already exists"
-            {
-                panic!("failed to parse source documents: {}", e);
-            };
-            bpf_skel
-        }
-    };
+    let bpf_skel_with_doc =
+        match parse_source_documents(args, &args.source_path, bpf_skel.clone(), tmp_workspace) {
+            Ok(v) => v,
+            Err(e) => {
+                if e.to_string()
+                    != "Failed to create Clang instance: an instance of `Clang` already exists"
+                {
+                    panic!("failed to parse source documents: {}", e);
+                };
+                bpf_skel
+            }
+        };
     meta_json["bpf_skel"] = bpf_skel_with_doc;
 
     // compile export types
     if !args.export_event_header.is_empty() {
         println!("Generating export types...");
-        let export_types_json = get_export_types_json(args, &output_bpf_object_path)?;
+        let export_types_json =
+            get_export_types_json(args, &output_bpf_object_path, &tmp_workspace)?;
         let export_types_json: Value = parse_json_output(&export_types_json)?;
         meta_json["export_types"] = export_types_json;
     }
@@ -143,7 +167,7 @@ fn do_compile(args: &CompileOptions, temp_source_file: &str) -> Result<()> {
 }
 
 /// compile JSON file
-pub fn compile_bpf(args: &CompileOptions) -> Result<()> {
+pub fn compile_bpf(args: &CompileOptions, tmp_workspace: &TempDir) -> Result<()> {
     // backup old files
     let source_file_content = fs::read_to_string(&args.source_path)?;
     let mut temp_source_file = args.source_path.clone();
@@ -154,7 +178,7 @@ pub fn compile_bpf(args: &CompileOptions) -> Result<()> {
         fs::write(&temp_source_file, source_file_content)?;
         add_unused_ptr_for_structs(args, &temp_source_file)?;
     }
-    let res = do_compile(args, &temp_source_file);
+    let res = do_compile(args, &temp_source_file, tmp_workspace);
     if !args.export_event_header.is_empty() {
         fs::remove_file(temp_source_file)?;
     }
@@ -220,11 +244,14 @@ mod test {
         let args = CompileOptions {
             ..Default::default()
         };
+        let tmp_workspace = TempDir::new().unwrap();
+        init_eunomia_workspace(&tmp_workspace).unwrap();
+
         let sys_include = get_bpf_sys_include(&args).unwrap();
         println!("{}", sys_include);
         let target_arch = get_target_arch(&args).unwrap();
         println!("{}", target_arch);
-        let eunomia_include = get_eunomia_include(&args).unwrap();
+        let eunomia_include = get_eunomia_include(&args, &tmp_workspace).unwrap();
         println!("{}", eunomia_include);
     }
 
@@ -253,9 +280,11 @@ mod test {
             export_event_header: event_path.to_str().unwrap().to_string(),
             ..Default::default()
         };
-        compile_bpf(&args).unwrap();
+        let tmp_workspace = TempDir::new().unwrap();
+        init_eunomia_workspace(&tmp_workspace).unwrap();
+        compile_bpf(&args, &tmp_workspace).unwrap();
         args.yaml = true;
-        compile_bpf(&args).unwrap();
+        compile_bpf(&args, &tmp_workspace).unwrap();
         let _ = fs::remove_dir_all(tmp_dir);
     }
 
@@ -283,7 +312,9 @@ mod test {
             export_event_header: event_path.to_str().unwrap().to_string(),
             ..Default::default()
         };
-        compile_bpf(&args).unwrap();
+        let tmp_workspace = TempDir::new().unwrap();
+        init_eunomia_workspace(&tmp_workspace).unwrap();
+        compile_bpf(&args, &tmp_workspace).unwrap();
         pack_object_in_config(&args).unwrap();
         let _ = fs::remove_dir_all(tmp_dir);
     }
