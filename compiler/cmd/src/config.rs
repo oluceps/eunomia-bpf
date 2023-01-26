@@ -7,6 +7,11 @@ use rust_embed::RustEmbed;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
+pub struct Options {
+    pub tmpdir: TempDir,
+    pub compile_opts: CompileOptions,
+}
+
 /// The eunomia-bpf compile tool
 ///
 /// pack ebpf skeleton in config file with zlib compression and base64 encoding
@@ -17,7 +22,6 @@ use std::path::Path;
     about = "eunomia-bpf compiler",
     long_about = "see https://github.com/eunomia-bpf/eunomia-bpf for more information"
 )]
-
 pub struct CompileOptions {
     /// path of the bpf.c file to compile
     #[arg()]
@@ -30,6 +34,25 @@ pub struct CompileOptions {
     /// path of output bpf object
     #[arg(short, long, default_value_t = ("").to_string())]
     pub output_path: String,
+
+    /// parameters related to compilation
+    #[clap(flatten)]
+    pub parameters: CompileParams,
+
+    /// print the command execution
+    #[arg(short, long, default_value_t = false)]
+    pub verbose: bool,
+
+    /// output config skel file in yaml
+    #[arg(short, long, default_value_t = false)]
+    pub yaml: bool,
+}
+
+#[derive(Parser, Debug, Default, Clone)]
+pub struct CompileParams {
+    /// custom workspace path
+    #[arg(short, long)]
+    pub workspace_path: Option<String>,
 
     /// additional c flags for clang
     #[arg(short, long, default_value_t = ("").to_string())]
@@ -46,24 +69,16 @@ pub struct CompileOptions {
     /// do not pack bpf object in config file
     #[arg(short, long, default_value_t = false)]
     pub subskeleton: bool,
-
-    /// print the command execution
-    #[arg(short, long, default_value_t = false)]
-    pub verbose: bool,
-
-    /// output config skel file in yaml
-    #[arg(short, long, default_value_t = false)]
-    pub yaml: bool,
 }
 
 /// Get output path for json: output.meta.json
-pub fn get_output_config_path(args: &CompileOptions) -> String {
-    let output_path = if args.output_path.is_empty() {
-        path::Path::new(&args.source_path).with_extension("")
+pub fn get_output_config_path(args: &Options) -> String {
+    let output_path = if args.compile_opts.output_path.is_empty() {
+        path::Path::new(&args.compile_opts.source_path).with_extension("")
     } else {
-        path::Path::new(&args.output_path).to_path_buf()
+        path::Path::new(&args.compile_opts.output_path).to_path_buf()
     };
-    let output_json_path = if args.yaml {
+    let output_json_path = if args.compile_opts.yaml {
         output_path.with_extension("skel.yaml")
     } else {
         output_path.with_extension("skel.json")
@@ -72,25 +87,25 @@ pub fn get_output_config_path(args: &CompileOptions) -> String {
 }
 
 /// Get output path for bpf object: output.bpf.o  
-pub fn get_output_object_path(args: &CompileOptions) -> String {
-    let output_path = if args.output_path.is_empty() {
-        path::Path::new(&args.source_path).with_extension("")
+pub fn get_output_object_path(args: &Options) -> String {
+    let output_path = if args.compile_opts.output_path.is_empty() {
+        path::Path::new(&args.compile_opts.source_path).with_extension("")
     } else {
-        path::Path::new(&args.output_path).to_path_buf()
+        path::Path::new(&args.compile_opts.output_path).to_path_buf()
     };
     let output_object_path = output_path.with_extension("bpf.o");
     output_object_path.to_str().unwrap().to_string()
 }
 
-pub fn get_source_file_temp_path(args: &CompileOptions) -> String {
-    let source_path = path::Path::new(&args.source_path);
+pub fn get_source_file_temp_path(args: &Options) -> String {
+    let source_path = path::Path::new(&args.compile_opts.source_path);
     let source_file_temp_path = source_path.with_extension("temp.c");
     source_file_temp_path.to_str().unwrap().to_string()
 }
 
 /// Get include paths from clang
 pub fn get_bpf_sys_include(args: &CompileOptions) -> Result<String> {
-    let mut command = args.clang_bin.clone();
+    let mut command = args.parameters.clang_bin.clone();
     command += r#" -v -E - </dev/null 2>&1 | sed -n '/<...> search starts here:/,/End of search list./{ s| \(/.*\)|-idirafter \1|p }'
      "#;
     let (code, output, error) = run_script::run_script!(command).unwrap();
@@ -128,8 +143,8 @@ pub fn get_target_arch(args: &CompileOptions) -> Result<String> {
 }
 
 /// Get eunomia home include dirs
-pub fn get_eunomia_include(args: &CompileOptions, tmp_workspace: &TempDir) -> Result<String> {
-    let eunomia_tmp_workspace = tmp_workspace.path();
+pub fn get_eunomia_include(args: &Options) -> Result<String> {
+    let eunomia_tmp_workspace = args.tmpdir.path();
     let eunomia_include = path::Path::new(&eunomia_tmp_workspace);
     let eunomia_include = match eunomia_include.canonicalize() {
         Ok(path) => path,
@@ -141,7 +156,7 @@ pub fn get_eunomia_include(args: &CompileOptions, tmp_workspace: &TempDir) -> Re
     };
     let eunomia_include = eunomia_include.join("include");
     let vmlinux_include = eunomia_include.join("vmlinux");
-    let vmlinux_include = vmlinux_include.join(get_target_arch(args)?);
+    let vmlinux_include = vmlinux_include.join(get_target_arch(&args.compile_opts)?);
     Ok(format!(
         "-I{} -I{}",
         eunomia_include.to_str().unwrap(),

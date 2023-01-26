@@ -7,6 +7,20 @@ pub struct TempDir {
     path: Box<Path>,
 }
 
+pub fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<()> {
+    fs::create_dir_all(&dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        if ty.is_dir() {
+            copy_dir_all(entry.path(), dst.as_ref().join(entry.file_name()))?;
+        } else {
+            fs::copy(entry.path(), dst.as_ref().join(entry.file_name()))?;
+        }
+    }
+    Ok(())
+}
+
 fn create_tmp_dir(path: PathBuf) -> io::Result<TempDir> {
     match fs::create_dir(&path) {
         // tmp workspace exist, return as well
@@ -60,5 +74,11 @@ impl TempDir {
 impl Drop for TempDir {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(self.path());
+    }
+}
+
+impl Default for TempDir {
+    fn default() -> Self {
+        Self::new().unwrap()
     }
 }
