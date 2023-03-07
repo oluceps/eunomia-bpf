@@ -110,6 +110,7 @@ jobs:
           const sha_this = context.sha;
           
           const coresp_release = releases.find((release) => { return release.target_commitish === sha_this });
+          console.log(coresp_release)
           const coresp_release_tag = coresp_release.tag_name;
           
           const latest_release_sha = release_shas[0];
