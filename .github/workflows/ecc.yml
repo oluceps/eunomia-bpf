@@ -105,9 +105,7 @@ jobs:
           
           if (releases.length === 0) { return "v0.0.1"; }
           
-          async function getReleaseForCommitSha(commitSha) {
-            const { owner, repo } = context.repo;
-            const { data: releases } = await github.rest.repos.listReleases({ owner, repo });
+          async function getReleaseForCommitSha(commitSha, releases) {
             return releases.find(release =>  get_release_commit_sha(release) === commitSha );
           }
           
@@ -119,7 +117,7 @@ jobs:
           }
           
           console.log("SHA of this commit: " + context.sha);
-          const coresp_release = await getReleaseForCommitSha(context.sha);
+          const coresp_release = await getReleaseForCommitSha(context.sha, releases);
           const latest_release_tag = releases[0].tag_name;
           console.log("coresp_release: " + coresp_release);
           console.log("latest_release_tag: " + latest_release_tag);
