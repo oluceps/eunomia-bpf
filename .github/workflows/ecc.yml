@@ -87,19 +87,19 @@ jobs:
         result-encoding: string
         script: |
 
-          const { data: releases } = await github.repos.listReleases({
+          const { data: releases } = await github.rest.repos.listReleases({
             owner: context.repo.owner,
             repo: context.repo.repo,
           });
           
           async function get_release_commit_sha(release) {
           
-            const { data: release_commit } = await github.repos.listCommits({
+            const { data: release_commit } = await github.rest.repos.listCommits({
               owner: context.repo.owner,
               repo: context.repo.repo,
               sha: release.target_commitish,
             });
-            console.log("release commit sha:" + release_commit[0].sha);
+            console.log("latest release commit sha:" + release_commit[0].sha);
             return release_commit[0].sha;
           }
           
@@ -107,7 +107,7 @@ jobs:
           
           async function getReleaseForCommitSha(commitSha) {
             const { owner, repo } = context.repo;
-            const { data: releases } = await github.repos.listReleases({ owner, repo });
+            const { data: releases } = await github.rest.repos.listReleases({ owner, repo });
             return releases.find(release =>  get_release_commit_sha(release) === commitSha );
           }
           
@@ -118,7 +118,7 @@ jobs:
             return next_version;
           }
           
-          console.log("now context.sha: " + context.sha);
+          console.log("SHA of this commit: " + context.sha);
           const coresp_release = await getReleaseForCommitSha(context.sha);
           const latest_release_tag = releases[0].tag_name;
           console.log("coresp_release: " + coresp_release);
@@ -133,8 +133,7 @@ jobs:
           console.log("coresponding release tag is: " + coresp_release_tag)
           console.log("SHA of this commit: " + sha)
           
-          return latest_release_tag      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          return latest_release_tag      
 
     - name: Package
       if:   github.event_name == 'push' && github.ref == 'refs/heads/master'
