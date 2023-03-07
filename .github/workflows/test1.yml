@@ -26,7 +26,7 @@ jobs:
         result-encoding: string
         script: |
 
-          var { data: releases } = await github.repos.listReleases({
+          let { data: releases } = await github.repos.listReleases({
             owner: context.repo.owner,
             repo: context.repo.repo,
           });
@@ -58,10 +58,6 @@ jobs:
           
           console.log("now context.sha: " + context.sha);
           
-          var { data: releases } = await github.repos.listReleases({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-          });
           const coresp_release = await getReleaseForCommitSha(context.sha, releases);
           const latest_release_tag = releases[0].tag_name;
           console.log("coresp_release: " + coresp_release);
