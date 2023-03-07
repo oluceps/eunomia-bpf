@@ -50,7 +50,7 @@ jobs:
           const tag = tags.find(tag => tag.commit.sha === context.sha);
           
           if (tag) {
-            console.log("exist coresponding tag: " + tag);
+            console.log("exist coresponding tag: " + tag.name);
             return tag.name;
           }
           
@@ -58,13 +58,7 @@ jobs:
           
           return increase_v(latest_release_tag);
           
-    - uses: rickstaa/action-create-tag@v1
-      id: "tag_create"
-      with:
-        tag: ${{ steps.set_version.outputs.result }}
-        message: "Latest release"
-        tag_exists_error: false
-          
+        
     - name: echo
       shell: bash
       run: |
