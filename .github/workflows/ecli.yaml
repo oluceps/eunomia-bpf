@@ -67,6 +67,7 @@ jobs:
       with:
         result-encoding: string
         script: |
+
           const { data: releases } = await github.repos.listReleases({
             owner: context.repo.owner,
             repo: context.repo.repo,
@@ -79,8 +80,8 @@ jobs:
               repo: context.repo.repo,
               sha: release.target_commitish,
             });
-            console.log("release commit sha:" + release_commit.sha);
-            return release_commit.sha;
+            console.log("release commit sha:" + release_commit[0].sha);
+            return release_commit[0].sha;
           }
           
           if (releases.length === 0) { return "v0.0.1"; }
@@ -88,7 +89,7 @@ jobs:
           async function getReleaseForCommitSha(commitSha) {
             const { owner, repo } = context.repo;
             const { data: releases } = await github.repos.listReleases({ owner, repo });
-            return releases.find(release => get_release_commit_sha(release) === commitSha);
+            return releases.find(release =>  get_release_commit_sha(release) === commitSha );
           }
           
           function increase_v(version) {
@@ -98,7 +99,7 @@ jobs:
             return next_version;
           }
           
-          console.log("now context.sha: "+context.sha);
+          console.log("now context.sha: " + context.sha);
           const coresp_release = await getReleaseForCommitSha(context.sha);
           const latest_release_tag = releases[0].tag_name;
           console.log("coresp_release: " + coresp_release);
@@ -113,7 +114,7 @@ jobs:
           console.log("coresponding release tag is: " + coresp_release_tag)
           console.log("SHA of this commit: " + sha)
           
-          return latest_release_tag
+          return latest_release_tag      
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
