@@ -38,7 +38,7 @@ jobs:
 
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     - name: Set latest release version
       if:   github.event_name == 'push' && github.ref == 'refs/heads/master'
@@ -102,7 +102,7 @@ jobs:
     - name: test ecc
       run:  cd compiler && make test
     - name: Upload analysis results to GitHub
-      uses: github/codeql-action/upload-sarif@v1
+      uses: github/codeql-action/upload-sarif@v2
       with:
         sarif_file: compiler/cmd/rust-clippy-results.sarif
         wait-for-processing: true
