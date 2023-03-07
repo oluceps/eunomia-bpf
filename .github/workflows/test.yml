@@ -51,7 +51,7 @@ jobs:
           
           if (tag) {
             console.log("exist coresponding tag: " + tag);
-            return tag;
+            return tag.name;
           }
           
           console.log("tag not found, will create" + increase_v(latest_release_tag));
