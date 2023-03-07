@@ -54,9 +54,9 @@ jobs:
             return tag;
           }
           
-          console.log("tag not found, will create" + increase_v(tag));
+          console.log("tag not found, will create" + increase_v(latest_release_tag));
           
-          return increase_v(tag);
+          return increase_v(latest_release_tag);
           
           
     - name: echo
