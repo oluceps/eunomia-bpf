@@ -118,6 +118,7 @@ jobs:
             return find_release_sha(release) === sha_this
           });
           console.log(coresp_release)
+
           const coresp_release_tag = coresp_release.tag_name;
           
           const latest_release_sha = find_release_sha(releases[0]);

@@ -74,40 +74,19 @@ jobs:
           
           if (releases.length === 0) { return "v0.0.1"; }
           
-          const { data: assets } = await github.repos.listReleaseAssets({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            release_id: releases[0].id,
-          });
+          // const { data: assets } = await github.repos.listReleaseAssets({
+          //   owner: context.repo.owner,
+          //   repo: context.repo.repo,
+          //   release_id: releases[0].id,
+          // });
           
+          // const assets_array = assets.map(asset => asset.name);
           
-          async function find_release_sha(release) {
-          
-            const { data: commits } = await github.repos.listCommits({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              sha: release.target_commitish,
-            });
-          
-            return commits.sha;
+          async function getReleaseForCommitSha(commitSha) {
+            const { owner, repo } = context.repo;
+            const { data: releases } = await github.repos.listReleases({ owner, repo });
+            return releases.find(release => release.target_commitish === commitSha);
           }
-          
-          const assets_array = assets.map(asset => asset.name);
-          const sha_this = context.sha;
-          
-          const coresp_release = releases.find((release) => {
-            return find_release_sha(release) === sha_this
-          });
-          console.log(coresp_release)
-          const coresp_release_tag = coresp_release.tag_name;
-          
-          const latest_release_sha = find_release_sha(releases[0]);
-          const latest_release_tag = releases[0].tag_name;
-          const rev_equal = latest_release_sha === sha_this;
-          
-          console.log("SHA of this commit: " + sha_this)
-          console.log("Latest release's SHA: " + latest_release_sha)
-          console.log(rev_equal)
           
           function increase_v(version) {
             const parts = version.split(".");
@@ -116,16 +95,27 @@ jobs:
             return next_version;
           }
           
-          if ((assets_array.some(str => str.includes("ecli")) != true)) {
-            if (rev_equal) {
-              return latest_release_tag;
-            }
-            return coresp_release_tag;
+          const coresp_release = await getReleaseForCommitSha(context.sha);
+          const latest_release_tag = releases[0].tag_name;
+          
+          if (coresp_release === undefined) {
+            return increase_v(latest_release_tag)
           }
           
+          const coresp_release_tag = coresp_release.tag_name;
           
-          return increase_v(latest_release_tag)
+          console.log("coresponding release tag is: " + coresp_release_tag)
+          console.log("SHA of this commit: " + sha)
           
+          
+          // if ((assets_array.some(str => str.includes("ecc")) != true)) {
+          //   if (rev_equal) {
+          //     return latest_release_tag;
+          //   }
+          //   return coresp_release_tag;
+          // }
+          return latest_release_tag
+        
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
