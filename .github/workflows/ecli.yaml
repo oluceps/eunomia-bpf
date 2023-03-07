@@ -68,45 +68,51 @@ jobs:
         result-encoding: string
         script: |
           const { data: releases } = await github.repos.listReleases({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
           });
-
+          
           if (releases.length === 0) { return "v0.0.1"; }
-
+          
           const { data: assets } = await github.repos.listReleaseAssets({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  release_id: releases[0].id,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            release_id: releases[0].id,
           });
-
-          const { data: commit } = await github.repos.listCommits({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  sha: releases[0].target_commitish,
+          
+          const { data: commits } = await github.repos.listCommits({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            sha: releases[0].target_commitish,
           });
-
+          
           const assets_array = assets.map(asset => asset.name);
-          const latest_release_rev = commit[0].sha;
+          const release_shas = commits.map(commit => commit.sha);
+          const sha_this = context.sha;
+          
+          const coresp_release = releases.find((release) => { return release.target_commitish === sha_this });
+          const coresp_release_tag = coresp_release.tag_name;
+          
+          const latest_release_sha = release_shas[0];
           const latest_release_tag = releases[0].tag_name;
-          const revision = context.sha;
-          const rev_equal = latest_release_rev === revision;
-
-          console.log(revision)
-          console.log(latest_release_rev)
+          const rev_equal = latest_release_sha === sha_this;
+          
+          console.log("SHA of this commit: " + sha_this)
+          console.log("Latest release's SHA: " + latest_release_sha)
           console.log(rev_equal)
-
+          
           function increase_v(version) {
-                  const parts = version.split(".");
-                  const last = parseInt(parts[2]) + 1;
-                  const next_version = `${parts[0]}.${parts[1]}.${last.toString()}`;
-                  return next_version;
+            const parts = version.split(".");
+            const last = parseInt(parts[2]) + 1;
+            const next_version = `${parts[0]}.${parts[1]}.${last.toString()}`;
+            return next_version;
           }
-
+          
           if ((assets_array.some(str => str.includes("ecli")) != true) && rev_equal) {
-                 return latest_release_tag;
+          
+            return coresp_release_tag;
           }
-
+          
           return increase_v(latest_release_tag)
           
       env:
