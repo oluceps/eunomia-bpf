@@ -26,7 +26,7 @@ jobs:
         result-encoding: string
         script: |
 
-          let { data: releases } = await github.repos.listReleases({
+          let { data: releases } = await github.rest.repos.listReleases({
             owner: context.repo.owner,
             repo: context.repo.repo,
           });
@@ -34,7 +34,7 @@ jobs:
           
           async function get_release_commit_sha(release) {
           
-            const { data: release_commit } = await github.repos.listCommits({
+            const { data: release_commit } = await github.rest.repos.listCommits({
               owner: context.repo.owner,
               repo: context.repo.repo,
               sha: release.target_commitish,
