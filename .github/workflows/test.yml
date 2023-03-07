@@ -46,8 +46,6 @@ jobs:
           if (releases.length === 0) { return "v0.0.1"; }
           
           async function getReleaseForCommitSha(commitSha, releases) {
-            const { owner, repo } = context.repo;
-            const { data: releases } = await github.repos.listReleases({ owner, repo });
             return releases.find(release => get_release_commit_sha(release) === commitSha);
           }
           
