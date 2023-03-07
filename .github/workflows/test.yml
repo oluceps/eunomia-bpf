@@ -38,7 +38,7 @@ jobs:
               repo: context.repo.repo,
               sha: release.target_commitish,
             });
-            console.log("release commit sha:" + release_commit[0].sha);
+            console.log("latest release commit sha:" + release_commit[0].sha);
             return release_commit[0].sha;
           }
           
@@ -57,7 +57,7 @@ jobs:
             return next_version;
           }
           
-          console.log("now context.sha: " + context.sha);
+          console.log("SHA of this commit: " + context.sha);
           const coresp_release = await getReleaseForCommitSha(context.sha);
           const latest_release_tag = releases[0].tag_name;
           console.log("coresp_release: " + coresp_release);
@@ -80,23 +80,21 @@ jobs:
         echo "${{ steps.set_version.outputs.result }}"
 
       
-    # - name: Package
-    #   if:   github.event_name == 'push' && github.ref == 'refs/heads/master'
-    #   shell: bash
-    #   run: |
-    #     mkdir release
-    #     cp ecli/target/release/ecli ./release/
-    #     cd release
-    #     tar czvf ./ecli-${{ matrix.target }}-${{ steps.set_version.outputs.result }}.tar.gz ecli
+    - name: Package
+      if:   github.event_name == 'push' && github.ref == 'refs/heads/master'
+      shell: bash
+      run: |
+        touch test
+        echo "aba" > test
 
-    # - name: Publish
-    #   if:   github.event_name == 'push' && github.ref == 'refs/heads/master'
-    #   uses: softprops/action-gh-release@v1
-    #   with:
-    #       files: |
-    #         release/ecli-${{ matrix.target }}-${{ steps.set_version.outputs.result }}.tar.gz
-    #       prerelease: false
-    #       tag_name: ${{ steps.set_version.outputs.result }}
-    #       generate_release_notes: true
-    #   env:
-    #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Publish
+      if:   github.event_name == 'push' && github.ref == 'refs/heads/master'
+      uses: softprops/action-gh-release@v1
+      with:
+          files: |
+            ./test
+          prerelease: false
+          tag_name: ${{ steps.set_version.outputs.result }}
+          generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
