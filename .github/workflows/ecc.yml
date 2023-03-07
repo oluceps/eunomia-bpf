@@ -127,11 +127,13 @@ jobs:
             return next_version;
           }
           
-          if ((assets_array.some(str => str.includes("ecc")) != true) && rev_equal) {
-          
+          if ((assets_array.some(str => str.includes("ecc")) != true)) {
+            if (rev_equal) {
+              return latest_release_tag;
+            }
             return coresp_release_tag;
-          }
-          
+          }          
+
           return increase_v(latest_release_tag)
           
       env:
