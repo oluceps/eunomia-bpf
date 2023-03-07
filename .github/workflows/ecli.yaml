@@ -73,15 +73,6 @@ jobs:
           });
           
           if (releases.length === 0) { return "v0.0.1"; }
-          
-          // const { data: assets } = await github.repos.listReleaseAssets({
-          //   owner: context.repo.owner,
-          //   repo: context.repo.repo,
-          //   release_id: releases[0].id,
-          // });
-          
-          // const assets_array = assets.map(asset => asset.name);
-          
           async function getReleaseForCommitSha(commitSha) {
             const { owner, repo } = context.repo;
             const { data: releases } = await github.repos.listReleases({ owner, repo });
@@ -98,6 +89,8 @@ jobs:
           const coresp_release = await getReleaseForCommitSha(context.sha);
           const latest_release_tag = releases[0].tag_name;
           
+          console.log("coresp_release" + coresp_release );
+          console.log( "latest_release_tag" + latest_release_tag);
           if (coresp_release === undefined) {
             return increase_v(latest_release_tag)
           }
@@ -106,14 +99,6 @@ jobs:
           
           console.log("coresponding release tag is: " + coresp_release_tag)
           console.log("SHA of this commit: " + sha)
-          
-          
-          // if ((assets_array.some(str => str.includes("ecc")) != true)) {
-          //   if (rev_equal) {
-          //     return latest_release_tag;
-          //   }
-          //   return coresp_release_tag;
-          // }
           return latest_release_tag
         
       env:
