@@ -26,28 +26,29 @@ jobs:
         result-encoding: string
         script: |
 
-          const { data: releases } = await github.rest.repos.listReleases({
+          var { data: releases } = await github.repos.listReleases({
             owner: context.repo.owner,
             repo: context.repo.repo,
           });
           
+          
           async function get_release_commit_sha(release) {
           
-            const { data: release_commit } = await github.rest.repos.listCommits({
+            const { data: release_commit } = await github.repos.listCommits({
               owner: context.repo.owner,
               repo: context.repo.repo,
               sha: release.target_commitish,
             });
-            console.log("latest release commit sha:" + release_commit[0].sha);
+            console.log("release commit sha:" + release_commit[0].sha);
             return release_commit[0].sha;
           }
           
           if (releases.length === 0) { return "v0.0.1"; }
           
-          async function getReleaseForCommitSha(commitSha) {
+          async function getReleaseForCommitSha(commitSha, releases) {
             const { owner, repo } = context.repo;
-            const { data: releases } = await github.rest.repos.listReleases({ owner, repo });
-            return releases.find(release =>  get_release_commit_sha(release) === commitSha );
+            const { data: releases } = await github.repos.listReleases({ owner, repo });
+            return releases.find(release => get_release_commit_sha(release) === commitSha);
           }
           
           function increase_v(version) {
@@ -57,8 +58,13 @@ jobs:
             return next_version;
           }
           
-          console.log("SHA of this commit: " + context.sha);
-          const coresp_release = await getReleaseForCommitSha(context.sha);
+          console.log("now context.sha: " + context.sha);
+          
+          var { data: releases } = await github.repos.listReleases({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+          });
+          const coresp_release = await getReleaseForCommitSha(context.sha, releases);
           const latest_release_tag = releases[0].tag_name;
           console.log("coresp_release: " + coresp_release);
           console.log("latest_release_tag: " + latest_release_tag);
@@ -72,7 +78,7 @@ jobs:
           console.log("coresponding release tag is: " + coresp_release_tag)
           console.log("SHA of this commit: " + sha)
           
-          return latest_release_tag      
+          return latest_release_tag
 
     - name: echo
       shell: bash
