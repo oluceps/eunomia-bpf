@@ -1,4 +1,4 @@
-name: Build and test ecli on Ubuntu
+name: test CI
 
 on:
   push:
