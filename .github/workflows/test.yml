@@ -25,28 +25,18 @@ jobs:
       with:
         result-encoding: string
         script: |
-          let { data: releases } = await github.rest.repos.listReleases({
+          const { data: releases } = await github.rest.repos.listReleases({
             owner: context.repo.owner,
             repo: context.repo.repo,
           });
           
-          
-          async function get_release_commit_sha(release) {
-          
-            const { data: release_commit } = await github.rest.repos.listCommits({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              sha: release.target_commitish,
-            });
-            console.log("release commit sha:" + release_commit[0].sha);
-            return release_commit[0].sha;
-          }
+          const { data: tags } = await github.rest.repos.listTags({
+            owner: context.repo.owner,
+            repo: context.repo.repo
+          });
           
           if (releases.length === 0) { return "v0.0.1"; }
           
-          async function getReleaseForCommitSha(commitSha, releases) {
-            return releases.find(release => get_release_commit_sha(release) === commitSha);
-          }
           
           function increase_v(version) {
             const parts = version.split(".");
@@ -55,23 +45,20 @@ jobs:
             return next_version;
           }
           
-          console.log("now context.sha: " + context.sha);
-          
-          const coresp_release = await getReleaseForCommitSha(context.sha, releases);
           const latest_release_tag = releases[0].tag_name;
-          console.log("coresp_release: " + coresp_release);
-          console.log("latest_release_tag: " + latest_release_tag);
           
-          if (coresp_release === undefined) {
-            return increase_v(latest_release_tag)
+          const tag = tags.find(tag => tag.commit.sha === context.sha);
+          
+          if (tag) {
+            console.log("exist coresponding tag: " + tag);
+            return tag;
           }
           
-          const coresp_release_tag = coresp_release.tag_name;
+          console.log("tag not found, will create" + increase_v(tag));
           
-          console.log("coresponding release tag is: " + coresp_release_tag)
-          console.log("SHA of this commit: " + sha)
+          return increase_v(tag);
           
-          return latest_release_tag
+          
 
     - name: echo
       shell: bash
