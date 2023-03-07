@@ -63,6 +63,7 @@ jobs:
       id: "tag_create"
       with:
         tag: ${{ steps.set_version.outputs.result }}
+        message: "Latest release"
         tag_exists_error: false
           
 
