@@ -21,7 +21,7 @@ use url::Url;
 use crate::{
     config::{ProgramConfigData, ProgramType},
     error::{EcliError, EcliResult},
-    json_runner::json::handle_json,
+    handle_json,
     oci::{default_schema_port, parse_img_url, wasm_pull},
     wasm_bpf_runner::wasm::handle_wasm,
     Action, ClientSubCommand,
@@ -153,8 +153,8 @@ impl TryFrom<Action> for RunArgs {
 }
 
 pub struct RemoteArgs {
-    client: Option<ClientArgs>,
-    server: Option<Action>,
+    pub client: Option<ClientArgs>,
+    pub server: Option<Action>,
 }
 
 #[derive(Default)]

@@ -1,6 +1,6 @@
 use crate::config::*;
 use crate::error::{EcliError, EcliResult};
-use crate::json_runner::json::handle_json;
+use crate::handle_json;
 use crate::wasm_bpf_runner::wasm::handle_wasm;
 use async_trait::async_trait;
 use hyper::server::conn::Http;
