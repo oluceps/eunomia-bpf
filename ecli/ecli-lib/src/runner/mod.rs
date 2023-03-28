@@ -18,13 +18,14 @@ use log::{debug, info};
 use swagger::{make_context, Has, XSpanIdString};
 use url::Url;
 
+pub use crate::ClientSubCommand;
 use crate::{
     config::{ProgramConfigData, ProgramType},
     error::{EcliError, EcliResult},
-    json_runner::json::handle_json,
+    json_runner::handle_json,
     oci::{default_schema_port, parse_img_url, wasm_pull},
     wasm_bpf_runner::wasm::handle_wasm,
-    Action, ClientSubCommand,
+    Action,
 };
 
 #[derive(Clone)]
@@ -40,7 +41,7 @@ pub struct RunArgs {
 #[allow(unused_imports)]
 use openapi_client::*;
 
-mod remote;
+pub mod remote;
 use remote::*;
 
 impl Default for RunArgs {
@@ -153,8 +154,8 @@ impl TryFrom<Action> for RunArgs {
 }
 
 pub struct RemoteArgs {
-    client: Option<ClientArgs>,
-    server: Option<Action>,
+    pub client: Option<ClientArgs>,
+    pub server: Option<Action>,
 }
 
 #[derive(Default)]
@@ -249,8 +250,10 @@ pub async fn start_server(args: RemoteArgs) -> EcliResult<()> {
     } = args.server.unwrap()
     {
         println!("starting server...");
-        let addr: &str = &format!("{addr}:{port}");
-        remote::create(addr, secure).await;
+        let addr: String = format!("{addr}:{port}");
+        let (_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+
+        remote::create(addr, secure, shutdown_rx).await;
     }
     Ok(())
 }
@@ -262,7 +265,7 @@ pub async fn client_action(args: RemoteArgs) -> EcliResult<()> {
         endpoint,
         port,
         secure,
-        mut run_args,
+        run_args,
     } = args.client.unwrap();
 
     if secure {

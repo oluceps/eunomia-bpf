@@ -3,15 +3,13 @@
 //! Copyright (c) 2023, eunomia-bpf
 //! All rights reserved.
 //!
+<<<<<<<< HEAD:ecli/client/src/main.rs
 use clap::{Parser, Subcommand};
 use signal_hook::{consts::SIGINT, iterator::Signals};
 use std::{process, thread};
 
 mod utils;
 
-pub use clap::{Parser, Subcommand};
-pub use env_logger::{Builder, Target};
-pub use error::EcliResult;
 use lib::{
     error::*,
     init_log,
@@ -21,18 +19,90 @@ use lib::{
     },
     runner::{client_action, run},
     ClientCmd, Signals, SIGINT,
-};
+|||||||| parent of 10743ce (chore: resolve conflict):ecli/src/main.rs
+mod config;
+mod error;
+mod json_runner;
+mod oci;
+mod runner;
+mod tar_reader;
+use signal_hook::{consts::SIGINT, iterator::Signals};
+use std::{process, thread};
+mod wasm_bpf_runner;
+use clap::{Parser, Subcommand};
+use env_logger::{Builder, Target};
+use error::EcliResult;
+use oci::{
+    auth::{login, logout},
+    pull, push,
+========
+pub mod config;
+pub mod error;
+pub mod json_runner;
+pub mod oci;
+pub mod runner;
+pub mod tar_reader;
+pub use runner::RemoteArgs;
+pub use signal_hook::{consts::SIGINT, iterator::Signals};
+pub use std::{process, thread};
+pub mod wasm_bpf_runner;
+pub use clap::{Parser, Subcommand};
+pub use env_logger::{Builder, Target};
+pub mod eunomia_bpf;
+pub use error::EcliResult;
 pub use oci::{
     auth::{login, logout},
     pull, push,
+>>>>>>>> 10743ce (chore: resolve conflict):ecli/ecli-lib/src/lib.rs
 };
+<<<<<<<< HEAD:ecli/client/src/main.rs
 use runner::run;
-pub use runner::RemoteArgs;
-use runner::{client_action, run, start_server};
-pub use signal_hook::{consts::SIGINT, iterator::Signals};
 use std::process;
 use std::thread;
-pub use std::{process, thread};
+|||||||| parent of 10743ce (chore: resolve conflict):ecli/src/main.rs
+// use runner::start_server;
+use runner::{client_action, run, start_server};
+========
+pub use runner::{client_action, run, start_server};
+>>>>>>>> 10743ce (chore: resolve conflict):ecli/ecli-lib/src/lib.rs
+
+#[derive(Subcommand)]
+pub enum Action {
+    Run {
+        #[arg(long, short = 'n')]
+        no_cache: Option<bool>,
+        #[arg(long, short = 'j')]
+        json: Option<bool>,
+        #[arg(allow_hyphen_values = true)]
+        prog: Vec<String>,
+    },
+
+    Push {
+        #[arg(long, short, default_value_t = ("app.wasm").to_string())]
+        module: String,
+        #[arg()]
+        image: String,
+    },
+
+    Pull {
+        #[arg(short, long, default_value_t = ("app.wasm").to_string())]
+        output: String,
+        #[arg()]
+        image: String,
+    },
+
+    Login {
+        #[arg()]
+        url: String,
+    },
+
+    Logout {
+        #[arg()]
+        url: String,
+    },
+}
+// use runner::start_server;
+use runner::{client_action, run, start_server};
 
 /// ecli subcommands, including run, push, pull, login, logout.
 #[derive(Subcommand)]
@@ -139,52 +209,4 @@ pub fn init_log() {
     let mut builder = Builder::from_default_env();
     builder.target(Target::Stdout);
     builder.init();
-}
-use clap::{Parser, Subcommand};
-mod utils;
-
-use ecli_lib::{
-    error::*,
-    init_log,
-    oci::{
-        auth::{login, logout},
-        pull, push,
-    },
-    process,
-    runner::{client_action, run},
-    ClientCmd, {Signals, SIGINT},
-};
-use std::thread;
-
-#[derive(Parser)]
-struct Args {
-    #[command(subcommand)]
-    action: Action,
-}
-
-#[tokio::main]
-async fn main() -> EcliResult<()> {
-    let signals = Signals::new(&[SIGINT]);
-    thread::spawn(move || match signals {
-        Ok(mut signals_info) => {
-            for sig in signals_info.forever() {
-                println!("Received signal {:?}", sig);
-                process::exit(0);
-            }
-            println!("Got signals info: {:?}", signals_info);
-        }
-        Err(error) => {
-            eprintln!("Error getting signals info: {}", error);
-        }
-    });
-    init_log();
-    let args = Args::parse();
-    match args.action {
-        Action::Run { .. } => run(args.action.try_into()?).await,
-        Action::Push { .. } => push(args.action.try_into()?).await,
-        Action::Pull { .. } => pull(args.action.try_into()?).await,
-        Action::Login { url } => login(url).await,
-        Action::Logout { url } => logout(url),
-        Action::Client(..) => client_action(args.action.try_into()?).await,
-    }
 }

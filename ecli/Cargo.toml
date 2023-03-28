@@ -5,7 +5,6 @@ members = [
     "client",
     "server",
 ]
-
 default-members = [
     "lib",
     "client",
