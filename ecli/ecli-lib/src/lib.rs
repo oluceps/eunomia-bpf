@@ -3,24 +3,25 @@
 //! Copyright (c) 2023, eunomia-bpf
 //! All rights reserved.
 //!
-mod config;
-mod error;
-mod json_runner;
-mod oci;
-mod runner;
-mod tar_reader;
-use signal_hook::{consts::SIGINT, iterator::Signals};
-use std::{process, thread};
-mod wasm_bpf_runner;
-use clap::{Parser, Subcommand};
-use env_logger::{Builder, Target};
-use error::EcliResult;
-use oci::{
+pub mod config;
+pub mod error;
+pub mod json_runner;
+pub mod oci;
+pub mod runner;
+pub mod tar_reader;
+pub use runner::RemoteArgs;
+pub use signal_hook::{consts::SIGINT, iterator::Signals};
+pub use std::{process, thread};
+pub mod wasm_bpf_runner;
+pub use clap::{Parser, Subcommand};
+pub use env_logger::{Builder, Target};
+pub mod eunomia_bpf;
+pub use error::EcliResult;
+pub use oci::{
     auth::{login, logout},
     pull, push,
 };
-// use runner::start_server;
-use runner::{client_action, run, start_server};
+pub use runner::{client_action, run, start_server};
 
 #[derive(Subcommand)]
 pub enum Action {
@@ -82,14 +83,14 @@ struct Args {
 #[derive(Parser)]
 pub struct ClientCmd {
     #[clap(subcommand)]
-    cmd: ClientSubCommand,
+    pub cmd: ClientSubCommand,
 
     #[clap(flatten)]
-    opts: ClientOpts,
+    pub opts: ClientOpts,
 }
 
 #[derive(Parser)]
-enum ClientSubCommand {
+pub enum ClientSubCommand {
     #[clap(name = "start", about = "start an ebpf programs on endpoint")]
     Start(StartCommand),
 
@@ -101,61 +102,33 @@ enum ClientSubCommand {
 }
 
 #[derive(Parser)]
-struct ClientOpts {
+pub struct ClientOpts {
     #[clap(short, long, help = "endpoint", default_value = "127.0.0.1")]
-    endpoint: String,
+    pub endpoint: String,
 
     #[clap(short, long, help = "enpoint port", default_value = "8527")]
-    port: u16,
+    pub port: u16,
 
     #[clap(short, long, help = "transport with https", default_value = "false")]
-    secure: bool,
+    pub secure: bool,
 }
 
 #[derive(Parser)]
-struct StartCommand {
+pub struct StartCommand {
     #[clap(required = true)]
-    prog: Vec<String>,
+    pub prog: Vec<String>,
     #[clap(long)]
-    extra_args: Option<Vec<String>>,
+    pub extra_args: Option<Vec<String>>,
 }
 
 #[derive(Parser)]
-struct StopCommand {
+pub struct StopCommand {
     #[clap(required = true)]
-    id: Vec<i32>,
+    pub id: Vec<i32>,
 }
 
-fn init_log() {
+pub fn init_log() {
     let mut builder = Builder::from_default_env();
     builder.target(Target::Stdout);
     builder.init();
-}
-
-#[tokio::main]
-async fn main() -> EcliResult<()> {
-    let signals = Signals::new(&[SIGINT]);
-    thread::spawn(move || match signals {
-        Ok(mut signals_info) => {
-            for sig in signals_info.forever() {
-                println!("Received signal {:?}", sig);
-                process::exit(0);
-            }
-            println!("Got signals info: {:?}", signals_info);
-        }
-        Err(error) => {
-            eprintln!("Error getting signals info: {}", error);
-        }
-    });
-    init_log();
-    let args = Args::parse();
-    match args.action {
-        Action::Run { .. } => run(args.action.try_into()?).await,
-        Action::Push { .. } => push(args.action.try_into()?).await,
-        Action::Pull { .. } => pull(args.action.try_into()?).await,
-        Action::Login { url } => login(url).await,
-        Action::Logout { url } => logout(url),
-        Action::Client(..) => client_action(args.action.try_into()?).await,
-        Action::Server { .. } => start_server(args.action.try_into()?).await,
-    }
 }
