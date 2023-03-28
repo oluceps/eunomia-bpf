@@ -12,28 +12,11 @@ use oci_distribution::{
     Client, Reference,
 };
 
-use crate::{
-    error::{EcliError, EcliResult},
-    Action,
-};
+use crate::error::{EcliError, EcliResult};
 
 pub struct PushArgs {
     pub file: String,
     pub image_url: String,
-}
-impl TryFrom<Action> for PushArgs {
-    type Error = EcliError;
-
-    fn try_from(value: Action) -> Result<Self, Self::Error> {
-        let Action::Push { module, image } = value else {
-            unreachable!()
-        };
-
-        Ok(PushArgs {
-            file: module,
-            image_url: image,
-        })
-    }
 }
 
 // return the manifest url
