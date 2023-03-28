@@ -3,6 +3,11 @@
 //! Copyright (c) 2023, eunomia-bpf
 //! All rights reserved.
 //!
+#[allow(dead_code)]
+#[allow(non_upper_case_globals)]
+#[allow(non_camel_case_types)]
+pub mod eunomia_bpf;
+
 pub mod config;
 pub mod error;
 pub mod json_runner;
@@ -15,7 +20,6 @@ pub use std::{process, thread};
 pub mod wasm_bpf_runner;
 pub use clap::{Parser, Subcommand};
 pub use env_logger::{Builder, Target};
-pub mod eunomia_bpf;
 pub use error::EcliResult;
 pub use oci::{
     auth::{login, logout},

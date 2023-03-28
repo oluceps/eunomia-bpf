@@ -1,13 +1,13 @@
 [workspace]
 
 members = [
-    "ecli-lib",
+    "lib",
     "client",
     "server",
 ]
 
 default-members = [
-    "ecli-lib",
+    "lib",
     "client",
     "server",
 ]
