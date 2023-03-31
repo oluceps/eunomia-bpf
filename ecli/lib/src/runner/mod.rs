@@ -147,6 +147,9 @@ pub struct ClientArgs {
 pub enum ClientActions {
     Start,
     Stop,
+    Log,
+    Pause,
+    Resume,
     List,
 }
 
@@ -278,6 +281,7 @@ pub async fn client_action(args: RemoteArgs) -> EcliResult<()> {
             }
             Ok(())
         }
+        _ => unimplemented!(),
     }
 }
 
