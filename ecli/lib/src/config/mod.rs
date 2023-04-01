@@ -8,6 +8,7 @@ use crate::{
     runner::RunArgs,
     tar_reader::tar_reader::unpack_tar,
 };
+use std::str::FromStr;
 
 pub enum ExportFormatType {
     ExportJson,
@@ -36,6 +37,19 @@ impl TryFrom<&str> for ProgramType {
                     path
                 )))
             }
+        }
+    }
+}
+
+impl FromStr for ProgramType {
+    type Err = EcliError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "JsonEunomia" => Ok(ProgramType::JsonEunomia),
+            "Tar" => Ok(ProgramType::Tar),
+            "WasmModule" => Ok(ProgramType::WasmModule),
+            &_ => Err(EcliError::Other("fail parse program type str".to_string())),
         }
     }
 }

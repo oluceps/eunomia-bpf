@@ -1,15 +1,6 @@
-use crate::{
-    config::*,
-    error::{EcliError, EcliResult},
-    json_runner::handle_json,
-    wasm_bpf_runner::wasm,
-    wasm_bpf_runner::wasm::handle_wasm,
-};
-
+use crate::config::*;
 use async_trait::async_trait;
 use eunomia_rs::TempDir;
-use hyper::server::conn::Http;
-use hyper::service::Service;
 use log::info;
 use openapi_client::models::ListGet200ResponseTasksInner;
 use openapi_client::server::MakeService;
@@ -20,24 +11,13 @@ use std::{io::Cursor, sync::Arc};
 use swagger::auth::MakeAllowAllAuthenticator;
 use swagger::ApiError;
 pub use swagger::{AuthData, ContextBuilder, EmptyContext, Has, Push, XSpanIdString};
+use tokio::sync::oneshot::Receiver;
 use tokio::sync::Mutex;
-use tokio::{net::TcpListener, sync::oneshot::Receiver};
 
-#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "ios")))]
-use openssl::ssl::{Ssl, SslAcceptor, SslFiletype, SslMethod};
-
-pub type ClientContext = swagger::make_context_ty!(
-    ContextBuilder,
-    EmptyContext,
-    Option<AuthData>,
-    XSpanIdString
-);
-
-/// Builds an SSL implementation for Simple HTTPS from some hard-coded file names
-pub async fn create(addr: String, https: bool, shutdown_rx: Receiver<()>) {
+pub async fn create(addr: String, _https: bool, shutdown_rx: Receiver<()>) {
     let addr = addr.parse().expect("Failed to parse bind address");
 
-    let server_data = Arc::new(tokio::sync::Mutex::new(ServerData::new()));
+    let server_data = Arc::new(Mutex::new(ServerData::new()));
 
     let server = Server::new(server_data);
 
@@ -45,56 +25,17 @@ pub async fn create(addr: String, https: bool, shutdown_rx: Receiver<()>) {
 
     let service = MakeAllowAllAuthenticator::new(service, "cosmo");
 
-    #[allow(unused_mut)]
     let mut service =
         openapi_client::server::context::MakeAddContext::<_, EmptyContext>::new(service);
 
-    if https {
-        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "ios")))]
-        {
-            let mut ssl = SslAcceptor::mozilla_intermediate_v5(SslMethod::tls())
-                .expect("Failed to create SSL Acceptor");
-
-            // Server authentication
-            ssl.set_private_key_file("examples/server-key.pem", SslFiletype::PEM)
-                .expect("Failed to set private key");
-            ssl.set_certificate_chain_file("examples/server-chain.pem")
-                .expect("Failed to set certificate chain");
-            ssl.check_private_key()
-                .expect("Failed to check private key");
-
-            let tls_acceptor = ssl.build();
-            let tcp_listener = TcpListener::bind(&addr).await.unwrap();
-
-            loop {
-                if let Ok((tcp, _)) = tcp_listener.accept().await {
-                    let ssl = Ssl::new(tls_acceptor.context()).unwrap();
-                    let addr = tcp.peer_addr().expect("Unable to get remote address");
-                    let service = service.call(addr);
-
-                    tokio::spawn(async move {
-                        let tls = tokio_openssl::SslStream::new(ssl, tcp).map_err(|_| ())?;
-                        let service = service.await.map_err(|_| ())?;
-
-                        // TODO: shutdown of https server
-                        Http::new()
-                            .serve_connection(tls, service)
-                            .await
-                            .map_err(|_| ())
-                    });
-                }
-            }
-        }
-    } else {
-        // Using HTTP
-        hyper::server::Server::bind(&addr)
-            .serve(service)
-            .with_graceful_shutdown(async {
-                shutdown_rx.await.ok();
-            })
-            .await
-            .unwrap()
-    }
+    // Using HTTP
+    hyper::server::Server::bind(&addr)
+        .serve(service)
+        .with_graceful_shutdown(async {
+            shutdown_rx.await.ok();
+        })
+        .await
+        .unwrap()
 }
 
 use wasm_bpf_rs::handle::WasmProgramHandle;
@@ -104,7 +45,7 @@ use wasm_bpf_rs::Config;
 
 #[derive(Clone)]
 pub struct Server<C> {
-    data: Arc<tokio::sync::Mutex<ServerData>>,
+    data: Arc<Mutex<ServerData>>,
     marker: PhantomData<C>,
 }
 
@@ -147,20 +88,6 @@ impl<C> Server<C> {
         }
     }
 }
-
-#[allow(unused)]
-pub async fn endpoint_start(data: ProgramConfigData) -> EcliResult<()> {
-    match data.prog_type {
-        ProgramType::JsonEunomia => handle_json(data),
-        ProgramType::WasmModule => handle_wasm(data),
-        ProgramType::Tar => Err(EcliError::BpfError(format!(
-            "Transporting btf path data to remote is not implemented"
-        ))),
-        _ => unreachable!(),
-    }
-}
-
-// server behavior not implemented
 
 #[async_trait]
 impl<C> Api<C> for Server<C>
@@ -213,18 +140,13 @@ where
             };
         };
 
-        let btf_path: Option<String> = if btf_data_file_path.exists() {
+        let _btf_path: Option<String> = if btf_data_file_path.exists() {
             Some(btf_data_file_path.as_path().display().to_string())
         } else {
             None
         };
 
-        let prog_type = match program_type.unwrap().as_str() {
-            "JsonEunomia" => ProgramType::JsonEunomia,
-            "Tar" => ProgramType::Tar,
-            "WasmModule" => ProgramType::WasmModule,
-            &_ => ProgramType::Undefine,
-        };
+        let prog_type = program_type.unwrap().parse::<ProgramType>().unwrap();
 
         match prog_type {
             ProgramType::WasmModule => {
@@ -244,9 +166,10 @@ where
                 let (wasm_handle, _) =
                     run_wasm_bpf_module_async(&program_data_buf.unwrap().0, &args, config).unwrap();
 
+                let id = server_data.global_count.clone();
+
                 server_data.wasm_tasks.insert(
-                    // server_data.global_count.clone(),
-                    1,
+                    id,
                     WasmProgram::new(Arc::new(Mutex::new(wasm_handle)), stdout),
                 );
 
@@ -255,11 +178,12 @@ where
             _ => unimplemented!(),
         }
 
-        // endpoint_start(data).await;
-
         Ok(StartPostResponse::ListOfRunningTasks(ListGet200Response {
-            status: Some("unimplemented".into()),
-            tasks: None,
+            status: Some("Ok".into()),
+            tasks: Some(vec![ListGet200ResponseTasksInner {
+                id: Some(server_data.global_count.clone().try_into().unwrap()),
+                name: None,
+            }]),
         }))
     }
 
@@ -279,6 +203,14 @@ where
             context.get().0.clone()
         );
 
+        let stop_rsp = |s: &str| {
+            Ok(StopPostResponse::StatusOfStoppingTheTask(
+                StopPost200Response {
+                    status: Some(s.into()),
+                },
+            ))
+        };
+
         match (
             list_get200_response_tasks_inner.id,
             list_get200_response_tasks_inner.name,
@@ -287,11 +219,20 @@ where
             _ => eprintln!("request not contained id or name of program"),
         };
 
-        // Err(ApiError("This server behavior not implemented".into()))
-        Ok(StopPostResponse::StatusOfStoppingTheTask(
-            StopPost200Response {
-                status: Some("unimplemented".into()),
-            },
-        ))
+        let id = list_get200_response_tasks_inner.id.unwrap();
+
+        let mut server_data = self.data.lock().await;
+
+        let task = server_data.wasm_tasks.remove(&(id as usize));
+
+        if let Some(t) = task {
+            let handler = t.handler.lock().await;
+
+            if handler.terminate().is_ok() {
+                return stop_rsp("successful terminated");
+            }
+            return stop_rsp("fail to terminate");
+        }
+        return stop_rsp("program with specified id not found");
     }
 }

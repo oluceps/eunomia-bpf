@@ -37,8 +37,8 @@ pub struct RunArgs {
 #[allow(unused_imports)]
 use openapi_client::*;
 
-pub mod remote;
-use remote::*;
+pub mod server;
+use server::*;
 
 impl Default for RunArgs {
     fn default() -> Self {
@@ -178,7 +178,7 @@ pub async fn start_server(args: RemoteArgs) -> EcliResult<()> {
         let addr: String = format!("{addr}:{port}");
         let (_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
-        remote::create(addr, secure, shutdown_rx).await;
+        server::create(addr, secure, shutdown_rx).await;
     }
     Ok(())
 }
@@ -204,6 +204,13 @@ pub async fn client_action(args: RemoteArgs) -> EcliResult<()> {
         if secure { "https" } else { "http" },
         endpoint,
         port
+    );
+
+    type ClientContext = swagger::make_context_ty!(
+        ContextBuilder,
+        EmptyContext,
+        Option<AuthData>,
+        XSpanIdString
     );
 
     let context: ClientContext = make_context!(

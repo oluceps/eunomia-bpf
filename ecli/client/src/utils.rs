@@ -5,7 +5,6 @@ use lib::{
     error::*,
     oci::{PullArgs, PushArgs},
     runner::{ClientActions, ClientArgs, ClientSubCommand, RemoteArgs, RunArgs},
-    ClientCmd,
 };
 
 impl TryFrom<Action> for RunArgs {
