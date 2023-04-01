@@ -223,7 +223,7 @@ where
 
         let mut server_data = self.data.lock().await;
 
-        let task = server_data.wasm_tasks.remove(&(id as usize));
+        let task = server_data.wasm_tasks.remove(&(id.checked_abs() as usize));
 
         if let Some(t) = task {
             let handler = t.handler.lock().await;
