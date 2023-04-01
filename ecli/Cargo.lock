@@ -1645,6 +1645,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "wasm-bpf-rs",
+ "wasmtime-wasi",
 ]
 
 [[package]]

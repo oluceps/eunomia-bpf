@@ -281,6 +281,7 @@ pub async fn client_action(args: RemoteArgs) -> EcliResult<()> {
             }
             Ok(())
         }
+
         _ => unimplemented!(),
     }
 }

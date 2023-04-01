@@ -2,8 +2,10 @@ use crate::{
     config::*,
     error::{EcliError, EcliResult},
     json_runner::handle_json,
+    wasm_bpf_runner::wasm,
     wasm_bpf_runner::wasm::handle_wasm,
 };
+
 use async_trait::async_trait;
 use eunomia_rs::TempDir;
 use hyper::server::conn::Http;
@@ -12,11 +14,13 @@ use log::info;
 use openapi_client::models::ListGet200ResponseTasksInner;
 use openapi_client::server::MakeService;
 use openapi_client::{models::*, Api, ListGetResponse, StartPostResponse, StopPostResponse};
-use std::fs::write;
 use std::marker::PhantomData;
+use std::{collections::HashMap, fs::write};
+use std::{io::Cursor, sync::Arc};
 use swagger::auth::MakeAllowAllAuthenticator;
 use swagger::ApiError;
 pub use swagger::{AuthData, ContextBuilder, EmptyContext, Has, Push, XSpanIdString};
+use tokio::sync::Mutex;
 use tokio::{net::TcpListener, sync::oneshot::Receiver};
 
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "ios")))]
@@ -33,7 +37,9 @@ pub type ClientContext = swagger::make_context_ty!(
 pub async fn create(addr: String, https: bool, shutdown_rx: Receiver<()>) {
     let addr = addr.parse().expect("Failed to parse bind address");
 
-    let server = Server::new();
+    let server_data = Arc::new(tokio::sync::Mutex::new(ServerData::new()));
+
+    let server = Server::new(server_data);
 
     let service = MakeService::new(server);
 
@@ -91,16 +97,52 @@ pub async fn create(addr: String, https: bool, shutdown_rx: Receiver<()>) {
     }
 }
 
+use wasm_bpf_rs::handle::WasmProgramHandle;
+use wasm_bpf_rs::pipe::ReadableWritePipe;
+use wasm_bpf_rs::run_wasm_bpf_module_async;
+use wasm_bpf_rs::Config;
+
 #[derive(Clone)]
 pub struct Server<C> {
-    // tasks: HashMap<usize, Worker>,
+    data: Arc<tokio::sync::Mutex<ServerData>>,
     marker: PhantomData<C>,
 }
 
+#[derive(Clone)]
+pub struct ServerData {
+    wasm_tasks: HashMap<usize, WasmProgram>,
+    id_name_map: HashMap<usize, String>,
+    global_count: usize,
+}
+
+type SafeWasmProgramHandle = Arc<Mutex<WasmProgramHandle>>;
+
+#[derive(Clone)]
+pub struct WasmProgram {
+    handler: SafeWasmProgramHandle,
+    log_msg: ReadableWritePipe<Cursor<Vec<u8>>>,
+}
+
+impl WasmProgram {
+    fn new(handler: SafeWasmProgramHandle, log_msg: ReadableWritePipe<Cursor<Vec<u8>>>) -> Self {
+        Self { handler, log_msg }
+    }
+}
+
+impl ServerData {
+    fn new() -> Self {
+        Self {
+            wasm_tasks: HashMap::new(),
+            id_name_map: HashMap::new(),
+            global_count: 0,
+        }
+    }
+}
+
 impl<C> Server<C> {
-    pub fn new() -> Self {
+    pub fn new(data: Arc<Mutex<ServerData>>) -> Self {
         Server {
-            // tasks: HashMap::new(),
+            data,
             marker: PhantomData,
         }
     }
@@ -157,13 +199,11 @@ where
             context.get().0.clone()
         );
 
+        let mut server_data = self.data.lock().await;
+
         let tmp_dir = TempDir::new();
 
-        let tmp_data_dir = if let Ok(p) = tmp_dir {
-            p
-        } else {
-            return Err(ApiError("Could not create tmp dir".into()));
-        };
+        let tmp_data_dir = tmp_dir.map_err(|e| ApiError(e.to_string())).unwrap();
 
         // store btf_data
         let btf_data_file_path = tmp_data_dir.path().join("btf_data");
@@ -179,8 +219,6 @@ where
             None
         };
 
-        let empty_extra_params = vec![String::default()];
-
         let prog_type = match program_type.unwrap().as_str() {
             "JsonEunomia" => ProgramType::JsonEunomia,
             "Tar" => ProgramType::Tar,
@@ -188,20 +226,37 @@ where
             &_ => ProgramType::Undefine,
         };
 
-        // assemble ProgramConfigData
-        let _data = ProgramConfigData {
-            url: String::default(),
-            use_cache: false,
-            btf_path,
-            program_data_buf: Vec::from(program_data_buf.unwrap().0),
-            extra_arg: extra_params
-                .unwrap_or_else(|| &empty_extra_params)
-                .to_owned(),
-            prog_type,
-            export_format_type: ExportFormatType::ExportPlantText,
-        };
+        match prog_type {
+            ProgramType::WasmModule => {
+                let stdout = ReadableWritePipe::new_vec_buf();
+                let stderr = ReadableWritePipe::new_vec_buf();
+                let config = Config::new(
+                    String::from("go-callback"),
+                    String::from("callback-wrapper"),
+                    Box::new(wasmtime_wasi::stdio::stdin()),
+                    Box::new(stdout.clone()),
+                    Box::new(stderr.clone()),
+                );
+                let empty_extra_arg = vec![String::default()];
 
-        // Err(ApiError("This server behavior not implemented".into()))
+                let args = extra_params.unwrap_or_else(|| &empty_extra_arg).as_slice();
+
+                let (wasm_handle, _) =
+                    run_wasm_bpf_module_async(&program_data_buf.unwrap().0, &args, config).unwrap();
+
+                server_data.wasm_tasks.insert(
+                    // server_data.global_count.clone(),
+                    1,
+                    WasmProgram::new(Arc::new(Mutex::new(wasm_handle)), stdout),
+                );
+
+                server_data.global_count += 1;
+            }
+            _ => unimplemented!(),
+        }
+
+        // endpoint_start(data).await;
+
         Ok(StartPostResponse::ListOfRunningTasks(ListGet200Response {
             status: Some("unimplemented".into()),
             tasks: None,
