@@ -31,6 +31,11 @@ unsafe extern "C" fn handler(
 }
 
 pub fn handle_json(conf: ProgramConfigData) -> EcliResult<()> {
+    let _ = json_handler(conf);
+    Ok(())
+}
+
+pub fn json_handler(conf: ProgramConfigData) -> EcliResult<*mut eunomia_bpf::eunomia_bpf> {
     let json_data = CString::new(conf.program_data_buf.as_slice())
         .map_err(|e| EcliError::Other(e.to_string()))?;
     let mut extra_arg_raw = vec![];
@@ -79,5 +84,5 @@ pub fn handle_json(conf: ProgramConfigData) -> EcliResult<()> {
         }
     }
 
-    Ok(())
+    Ok(bpf)
 }
