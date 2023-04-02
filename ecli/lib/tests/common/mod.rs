@@ -70,7 +70,7 @@ pub mod client_tests {
         client_action(args).await.unwrap()
     }
 
-    pub async fn start_with_no_name() {
+    pub async fn start() {
         let args = RemoteArgs {
             client: Some(ClientArgs {
                 action_type: runner::ClientActions::Start,

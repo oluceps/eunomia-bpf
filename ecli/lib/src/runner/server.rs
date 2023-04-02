@@ -5,6 +5,7 @@ use log::info;
 use openapi_client::models::ListGet200ResponseTasksInner;
 use openapi_client::server::MakeService;
 use openapi_client::{models::*, Api, ListGetResponse, StartPostResponse, StopPostResponse};
+use std::io::Write;
 use std::marker::PhantomData;
 use std::{collections::HashMap, fs::write};
 use std::{io::Cursor, sync::Arc};
@@ -60,11 +61,17 @@ pub struct WasmProgram {
     handler: Arc<Mutex<WasmProgramHandle>>,
 
     #[allow(dead_code)]
-    log_msg: ReadableWritePipe<Cursor<Vec<u8>>>,
+    log_msg: LogMsg,
+}
+
+#[derive(Clone)]
+struct LogMsg {
+    stdout: ReadableWritePipe<Cursor<Vec<u8>>>,
+    stderr: ReadableWritePipe<Cursor<Vec<u8>>>,
 }
 
 impl WasmProgram {
-    fn new(handler: WasmProgramHandle, log_msg: ReadableWritePipe<Cursor<Vec<u8>>>) -> Self {
+    fn new(handler: WasmProgramHandle, log_msg: LogMsg) -> Self {
         Self {
             handler: Arc::new(Mutex::new(handler)),
             log_msg,
@@ -189,7 +196,7 @@ where
 
                 server_data
                     .wasm_tasks
-                    .insert(id, WasmProgram::new(wasm_handle, stdout));
+                    .insert(id, WasmProgram::new(wasm_handle, LogMsg { stdout, stderr }));
 
                 server_data
                     .id_name_map
