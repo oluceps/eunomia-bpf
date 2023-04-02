@@ -5,7 +5,6 @@ use log::info;
 use openapi_client::models::ListGet200ResponseTasksInner;
 use openapi_client::server::MakeService;
 use openapi_client::{models::*, Api, ListGetResponse, StartPostResponse, StopPostResponse};
-use std::io::Write;
 use std::marker::PhantomData;
 use std::{collections::HashMap, fs::write};
 use std::{io::Cursor, sync::Arc};
@@ -65,6 +64,7 @@ pub struct WasmProgram {
 }
 
 #[derive(Clone)]
+#[allow(unused)]
 struct LogMsg {
     stdout: ReadableWritePipe<Cursor<Vec<u8>>>,
     stderr: ReadableWritePipe<Cursor<Vec<u8>>>,
@@ -109,7 +109,7 @@ where
         info!("Recieved List request");
         info!("list_get() - X-Span-ID: {:?}", context.get().0.clone());
 
-        let mut server_data = self.data.lock().await;
+        let server_data = self.data.lock().await;
 
         let id_and_name: Vec<ListGet200ResponseTasksInner> = server_data
             .id_name_map
