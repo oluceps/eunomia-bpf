@@ -6,7 +6,7 @@
 use std::{
     fs::File,
     io::{self, Read},
-    path::Path,
+    path::{Path, PathBuf},
     vec,
 };
 
@@ -183,6 +183,13 @@ pub async fn start_server(args: RemoteArgs) -> EcliResult<()> {
     Ok(())
 }
 
+type ClientContext = swagger::make_context_ty!(
+    ContextBuilder,
+    EmptyContext,
+    Option<AuthData>,
+    XSpanIdString
+);
+
 pub async fn client_action(args: RemoteArgs) -> EcliResult<()> {
     let ClientArgs {
         action_type,
@@ -204,13 +211,6 @@ pub async fn client_action(args: RemoteArgs) -> EcliResult<()> {
         if secure { "https" } else { "http" },
         endpoint,
         port
-    );
-
-    type ClientContext = swagger::make_context_ty!(
-        ContextBuilder,
-        EmptyContext,
-        Option<AuthData>,
-        XSpanIdString
     );
 
     let context: ClientContext = make_context!(
@@ -244,25 +244,29 @@ pub async fn client_action(args: RemoteArgs) -> EcliResult<()> {
         }
 
         ClientActions::Start => {
+            let program_name: Option<String> = PathBuf::from(run_args.file.clone())
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string());
+
             let prog_data = ProgramConfigData::async_try_from(run_args).await?;
-            let btf_data = match prog_data.btf_path {
-                Some(d) => {
-                    let mut file = File::open(d).unwrap();
-                    let mut buffer = Vec::new();
-                    file.read_to_end(&mut buffer).unwrap_or_default();
-                    buffer
-                }
-                None => Vec::new(),
-            };
+
+            let btf_data = prog_data.btf_path.map(|d| {
+                let mut file = File::open(d).unwrap();
+                let mut buffer = Vec::new();
+                file.read_to_end(&mut buffer).unwrap_or_default();
+                swagger::ByteArray(buffer)
+            });
 
             let result = client
                 .start_post(
                     Some(swagger::ByteArray(prog_data.program_data_buf)),
                     Some(format!("{:?}", prog_data.prog_type)),
-                    Some(swagger::ByteArray(btf_data)),
+                    program_name,
+                    btf_data,
                     Some(&prog_data.extra_arg),
                 )
                 .await;
+
             println!("{:?} from endpoint:  {endpoint}:{port}", result);
             info!(
                 "{:?} (X-Span-ID: {:?})",
@@ -278,6 +282,7 @@ pub async fn client_action(args: RemoteArgs) -> EcliResult<()> {
                     id: Some(per_id),
                     name: None,
                 };
+
                 let result = client.stop_post(inner).await;
                 println!("{:?} from endpoint:  {endpoint}:{port}", result);
                 info!(

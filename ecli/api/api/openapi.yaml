@@ -77,6 +77,7 @@ components:
         id: 0
       properties:
         id:
+          format: unit64
           type: integer
         name:
           type: string
@@ -94,6 +95,8 @@ components:
           format: binary
           type: string
         program_type:
+          type: string
+        program_name:
           type: string
         btf_data:
           format: binary

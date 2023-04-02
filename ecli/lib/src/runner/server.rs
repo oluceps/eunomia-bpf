@@ -25,8 +25,7 @@ pub async fn create(addr: String, _https: bool, shutdown_rx: Receiver<()>) {
 
     let service = MakeAllowAllAuthenticator::new(service, "cosmo");
 
-    let mut service =
-        openapi_client::server::context::MakeAddContext::<_, EmptyContext>::new(service);
+    let service = openapi_client::server::context::MakeAddContext::<_, EmptyContext>::new(service);
 
     // Using HTTP
     hyper::server::Server::bind(&addr)
@@ -56,17 +55,18 @@ pub struct ServerData {
     global_count: usize,
 }
 
-type SafeWasmProgramHandle = Arc<Mutex<WasmProgramHandle>>;
-
 #[derive(Clone)]
 pub struct WasmProgram {
-    handler: SafeWasmProgramHandle,
+    handler: Arc<Mutex<WasmProgramHandle>>,
     log_msg: ReadableWritePipe<Cursor<Vec<u8>>>,
 }
 
 impl WasmProgram {
-    fn new(handler: SafeWasmProgramHandle, log_msg: ReadableWritePipe<Cursor<Vec<u8>>>) -> Self {
-        Self { handler, log_msg }
+    fn new(handler: WasmProgramHandle, log_msg: ReadableWritePipe<Cursor<Vec<u8>>>) -> Self {
+        Self {
+            handler: Arc::new(Mutex::new(handler)),
+            log_msg,
+        }
     }
 }
 
@@ -111,6 +111,7 @@ where
         &self,
         program_data_buf: Option<swagger::ByteArray>,
         program_type: Option<String>,
+        program_name: Option<String>,
         btf_data: Option<swagger::ByteArray>,
         extra_params: Option<&Vec<String>>,
         context: &C,
@@ -147,6 +148,7 @@ where
         };
 
         let prog_type = program_type.unwrap().parse::<ProgramType>().unwrap();
+        let id = server_data.global_count.clone();
 
         match prog_type {
             ProgramType::WasmModule => {
@@ -166,12 +168,13 @@ where
                 let (wasm_handle, _) =
                     run_wasm_bpf_module_async(&program_data_buf.unwrap().0, &args, config).unwrap();
 
-                let id = server_data.global_count.clone();
+                server_data
+                    .wasm_tasks
+                    .insert(id, WasmProgram::new(wasm_handle, stdout));
 
-                server_data.wasm_tasks.insert(
-                    id,
-                    WasmProgram::new(Arc::new(Mutex::new(wasm_handle)), stdout),
-                );
+                server_data
+                    .id_name_map
+                    .insert(id, program_name.unwrap_or("NamelessProg".to_string()));
 
                 server_data.global_count += 1;
             }
@@ -181,7 +184,7 @@ where
         Ok(StartPostResponse::ListOfRunningTasks(ListGet200Response {
             status: Some("Ok".into()),
             tasks: Some(vec![ListGet200ResponseTasksInner {
-                id: Some(server_data.global_count.clone().try_into().unwrap()),
+                id: Some(id as i32),
                 name: None,
             }]),
         }))
@@ -211,19 +214,13 @@ where
             ))
         };
 
-        match (
-            list_get200_response_tasks_inner.id,
-            list_get200_response_tasks_inner.name,
-        ) {
-            (Some(_), _) | (_, Some(_)) => (),
-            _ => eprintln!("request not contained id or name of program"),
-        };
-
         let id = list_get200_response_tasks_inner.id.unwrap();
 
         let mut server_data = self.data.lock().await;
 
-        let task = server_data.wasm_tasks.remove(&(id.checked_abs() as usize));
+        let task = server_data
+            .wasm_tasks
+            .remove(&(id.checked_abs().unwrap() as usize));
 
         if let Some(t) = task {
             let handler = t.handler.lock().await;

@@ -66,6 +66,11 @@ impl TryFrom<Action> for ClientArgs {
                     port: c.opts.port,
                     ..Default::default()
                 }),
+                ClientSubCommand::List => Ok(Self {
+                    endpoint: c.opts.endpoint,
+                    port: c.opts.port,
+                    ..Default::default()
+                }),
                 ClientSubCommand::Log(cmd) => Ok(Self {
                     action_type: ClientActions::Log,
                     id: cmd.id,
@@ -73,25 +78,20 @@ impl TryFrom<Action> for ClientArgs {
                     port: c.opts.port,
                     ..Default::default()
                 }),
-                ClientSubCommand::Pause(cmd) => Ok(Self {
-                    action_type: ClientActions::Pause,
-                    id: cmd.id,
-                    endpoint: c.opts.endpoint,
-                    port: c.opts.port,
-                    ..Default::default()
-                }),
-                ClientSubCommand::Resume(cmd) => Ok(Self {
-                    action_type: ClientActions::Resume,
-                    id: cmd.id,
-                    endpoint: c.opts.endpoint,
-                    port: c.opts.port,
-                    ..Default::default()
-                }),
-                ClientSubCommand::List => Ok(Self {
-                    endpoint: c.opts.endpoint,
-                    port: c.opts.port,
-                    ..Default::default()
-                }),
+                // ClientSubCommand::Pause(cmd) => Ok(Self {
+                //     action_type: ClientActions::Pause,
+                //     id: cmd.id,
+                //     endpoint: c.opts.endpoint,
+                //     port: c.opts.port,
+                //     ..Default::default()
+                // }),
+                // ClientSubCommand::Resume(cmd) => Ok(Self {
+                //     action_type: ClientActions::Resume,
+                //     id: cmd.id,
+                //     endpoint: c.opts.endpoint,
+                //     port: c.opts.port,
+                //     ..Default::default()
+                // }),
             }
         } else {
             unreachable!()

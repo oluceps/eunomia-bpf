@@ -476,6 +476,7 @@ where
         &self,
         param_program_data_buf: Option<swagger::ByteArray>,
         param_program_type: Option<String>,
+        param_program_name: Option<String>,
         param_btf_data: Option<swagger::ByteArray>,
         param_extra_params: Option<&Vec<String>>,
         context: &C,
@@ -556,6 +557,28 @@ where
                 Some(program_type_mime),
             );
 
+            let program_name_str = match serde_json::to_string(&param_program_name) {
+                Ok(str) => str,
+                Err(e) => {
+                    return Err(ApiError(format!(
+                        "Unable to serialize program_name to string: {}",
+                        e
+                    )))
+                }
+            };
+
+            let program_name_vec = program_name_str.as_bytes().to_vec();
+            let program_name_mime =
+                mime_0_2::Mime::from_str("application/json").expect("impossible to fail to parse");
+            let program_name_cursor = Cursor::new(program_name_vec);
+
+            multipart.add_stream(
+                "program_name",
+                program_name_cursor,
+                None::<&str>,
+                Some(program_name_mime),
+            );
+
             let btf_data_str = match serde_json::to_string(&param_btf_data) {
                 Ok(str) => str,
                 Err(e) => {
@@ -605,7 +628,7 @@ where
                 Err(err) => return Err(ApiError(format!("Unable to build request: {}", err))),
             };
 
-            let mut body_string = String::default();
+            let mut body_string = String::new();
 
             match fields.read_to_string(&mut body_string) {
                 Ok(_) => (),

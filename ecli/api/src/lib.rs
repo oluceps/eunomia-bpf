@@ -59,6 +59,7 @@ pub trait Api<C: Send + Sync> {
         &self,
         program_data_buf: Option<swagger::ByteArray>,
         program_type: Option<String>,
+        program_name: Option<String>,
         btf_data: Option<swagger::ByteArray>,
         extra_params: Option<&Vec<String>>,
         context: &C,
@@ -91,6 +92,7 @@ pub trait ApiNoContext<C: Send + Sync> {
         &self,
         program_data_buf: Option<swagger::ByteArray>,
         program_type: Option<String>,
+        program_name: Option<String>,
         btf_data: Option<swagger::ByteArray>,
         extra_params: Option<&Vec<String>>,
     ) -> Result<StartPostResponse, ApiError>;
@@ -138,6 +140,7 @@ impl<T: Api<C> + Send + Sync, C: Clone + Send + Sync> ApiNoContext<C> for Contex
         &self,
         program_data_buf: Option<swagger::ByteArray>,
         program_type: Option<String>,
+        program_name: Option<String>,
         btf_data: Option<swagger::ByteArray>,
         extra_params: Option<&Vec<String>>,
     ) -> Result<StartPostResponse, ApiError> {
@@ -146,6 +149,7 @@ impl<T: Api<C> + Send + Sync, C: Clone + Send + Sync> ApiNoContext<C> for Contex
             .start_post(
                 program_data_buf,
                 program_type,
+                program_name,
                 btf_data,
                 extra_params,
                 &context,

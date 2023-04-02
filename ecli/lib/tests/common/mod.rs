@@ -40,6 +40,7 @@ pub mod client_tests {
             client: Some(ClientArgs {
                 action_type: runner::ClientActions::List,
                 id: vec![0],
+                name: "test".to_string(),
                 run_args: RunArgs {
                     ..Default::default()
                 },
@@ -57,6 +58,7 @@ pub mod client_tests {
             client: Some(ClientArgs {
                 action_type: runner::ClientActions::Stop,
                 id: vec![1, 2, 3, 4, 5],
+                name: "test".to_string(),
                 run_args: RunArgs {
                     ..Default::default()
                 },
@@ -75,6 +77,7 @@ pub mod client_tests {
             client: Some(ClientArgs {
                 action_type: runner::ClientActions::Start,
                 id: vec![0],
+                name: "test".to_string(),
                 run_args: RunArgs {
                     // test transport of file
                     file: "tests/test.json".to_string(),
