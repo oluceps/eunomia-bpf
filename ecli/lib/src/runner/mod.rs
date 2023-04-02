@@ -252,9 +252,7 @@ pub async fn client_action(args: RemoteArgs) -> EcliResult<()> {
 
             let btf_data = match prog_data.btf_path {
                 Some(d) => {
-                    let mut file = File::open(d)
-                        .map_err(EcliError::IOErr(format!("fail reading btf data file")))
-                        .unwrap();
+                    let mut file = File::open(d).map_err(|e| EcliError::IOErr(e)).unwrap();
                     let mut buffer = Vec::new();
                     file.read_to_end(&mut buffer).unwrap_or_default();
                     swagger::ByteArray(buffer)

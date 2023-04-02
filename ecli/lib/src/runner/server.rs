@@ -168,13 +168,18 @@ where
             ProgramType::WasmModule => {
                 let stdout = ReadableWritePipe::new_vec_buf();
                 let stderr = ReadableWritePipe::new_vec_buf();
-                let config = Config::new(
-                    String::from("go-callback"),
-                    String::from("callback-wrapper"),
-                    Box::new(wasmtime_wasi::stdio::stdin()),
-                    Box::new(stdout.clone()),
-                    Box::new(stderr.clone()),
-                );
+                let config = Config {
+                    callback_export_name: String::from("go-callback"),
+                    wrapper_module_name: String::from("callback-wrapper"),
+                    ..Default::default()
+                };
+                //     String::from("go-callback"),
+                //     String::from("callback-wrapper"),
+                //     // Box::new(wasmtime_wasi::stdio::stdin()),
+                //     // Box::new(stdout.clone()),
+                //     // Box::new(stderr.clone()),
+                //     ..Default::default(),
+                // );
                 let empty_extra_arg = vec![String::default()];
 
                 let args = extra_params.unwrap_or_else(|| &empty_extra_arg).as_slice();
