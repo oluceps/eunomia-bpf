@@ -58,6 +58,8 @@ pub struct ServerData {
 #[derive(Clone)]
 pub struct WasmProgram {
     handler: Arc<Mutex<WasmProgramHandle>>,
+
+    #[allow(dead_code)]
     log_msg: ReadableWritePipe<Cursor<Vec<u8>>>,
 }
 
@@ -97,12 +99,24 @@ where
     /// Get list of running tasks
     async fn list_get(&self, context: &C) -> Result<ListGetResponse, ApiError> {
         let context = context.clone();
-        info!("Recieved List request, but has not been implemented");
+        info!("Recieved List request");
         info!("list_get() - X-Span-ID: {:?}", context.get().0.clone());
-        // Err(ApiError("This server behavior not implemented".into()))
+
+        let mut server_data = self.data.lock().await;
+
+        let id_and_name: Vec<ListGet200ResponseTasksInner> = server_data
+            .id_name_map
+            .clone()
+            .into_iter()
+            .map(|(id, name)| ListGet200ResponseTasksInner {
+                id: Some(id as i32),
+                name: Some(name),
+            })
+            .collect();
+
         Ok(ListGetResponse::ListOfRunningTasks(ListGet200Response {
-            status: Some("unimplemented".into()),
-            tasks: None,
+            status: Some("Ok".into()),
+            tasks: Some(id_and_name),
         }))
     }
 
@@ -226,6 +240,9 @@ where
             let handler = t.handler.lock().await;
 
             if handler.terminate().is_ok() {
+                server_data
+                    .id_name_map
+                    .remove(&(id.checked_abs().unwrap() as usize));
                 return stop_rsp("successful terminated");
             }
             return stop_rsp("fail to terminate");

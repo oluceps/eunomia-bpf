@@ -250,19 +250,24 @@ pub async fn client_action(args: RemoteArgs) -> EcliResult<()> {
 
             let prog_data = ProgramConfigData::async_try_from(run_args).await?;
 
-            let btf_data = prog_data.btf_path.map(|d| {
-                let mut file = File::open(d).unwrap();
-                let mut buffer = Vec::new();
-                file.read_to_end(&mut buffer).unwrap_or_default();
-                swagger::ByteArray(buffer)
-            });
+            let btf_data = match prog_data.btf_path {
+                Some(d) => {
+                    let mut file = File::open(d)
+                        .map_err(EcliError::IOErr(format!("fail reading btf data file")))
+                        .unwrap();
+                    let mut buffer = Vec::new();
+                    file.read_to_end(&mut buffer).unwrap_or_default();
+                    swagger::ByteArray(buffer)
+                }
+                None => swagger::ByteArray(Vec::new()),
+            };
 
             let result = client
                 .start_post(
                     Some(swagger::ByteArray(prog_data.program_data_buf)),
                     Some(format!("{:?}", prog_data.prog_type)),
                     program_name,
-                    btf_data,
+                    Some(btf_data),
                     Some(&prog_data.extra_arg),
                 )
                 .await;

@@ -17,7 +17,7 @@ pub async fn run_eserver() -> tokio::sync::oneshot::Sender<()> {
 }
 
 pub async fn start_server(addr: &str, shutdown_rx: Receiver<()>) {
-    lib::runner::remote::create(addr.to_string(), false, shutdown_rx).await;
+    lib::runner::server::create(addr.to_string(), false, shutdown_rx).await;
 }
 
 pub fn is_port_open(address: &str) -> bool {
@@ -40,7 +40,6 @@ pub mod client_tests {
             client: Some(ClientArgs {
                 action_type: runner::ClientActions::List,
                 id: vec![0],
-                name: "test".to_string(),
                 run_args: RunArgs {
                     ..Default::default()
                 },
@@ -58,7 +57,6 @@ pub mod client_tests {
             client: Some(ClientArgs {
                 action_type: runner::ClientActions::Stop,
                 id: vec![1, 2, 3, 4, 5],
-                name: "test".to_string(),
                 run_args: RunArgs {
                     ..Default::default()
                 },
@@ -72,12 +70,11 @@ pub mod client_tests {
         client_action(args).await.unwrap()
     }
 
-    pub async fn start() {
+    pub async fn start_with_no_name() {
         let args = RemoteArgs {
             client: Some(ClientArgs {
                 action_type: runner::ClientActions::Start,
                 id: vec![0],
-                name: "test".to_string(),
                 run_args: RunArgs {
                     // test transport of file
                     file: "tests/test.json".to_string(),
