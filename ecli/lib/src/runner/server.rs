@@ -1,5 +1,5 @@
 use crate::eunomia_bpf::{destroy_eunomia_skel, eunomia_bpf};
-use crate::{config::*, EcliResult};
+use crate::{config::*, json_runner::json_handler, EcliResult};
 use async_trait::async_trait;
 use eunomia_rs::TempDir;
 use log::info;
@@ -53,7 +53,7 @@ pub struct Server<C> {
 pub struct ServerData {
     wasm_tasks: HashMap<usize, WasmModuleProgram>,
     json_tasks: HashMap<usize, JsonEunomiaProgram>,
-    id_name_map: HashMap<usize, String>,
+    prog_info: HashMap<usize, (String, ProgramType)>,
     global_count: usize,
 }
 
@@ -69,17 +69,17 @@ impl Drop for EunomiaBpfPtr {
 }
 
 impl EunomiaBpfPtr {
-    fn new(p: *mut eunomia_bpf) -> Self {
+    fn from_raw_ptr(p: *mut eunomia_bpf) -> Self {
         let ptr = NonNull::<eunomia_bpf>::new(p).expect("ptr of `eunomia_bpf` is null!");
         Self(ptr)
     }
 
-    fn get(&mut self) -> *mut eunomia_bpf {
+    fn get_raw(&mut self) -> *mut eunomia_bpf {
         NonNull::as_ptr(self.0)
     }
 
     fn terminate(&mut self) -> EcliResult<()> {
-        unsafe { destroy_eunomia_skel(self.get()) }
+        unsafe { destroy_eunomia_skel(self.get_raw()) }
         Ok(())
     }
 }
@@ -123,6 +123,10 @@ impl JsonEunomiaProgram {
             log_msg,
         }
     }
+
+    async fn stop(self) -> EcliResult<()> {
+        self.ptr.lock_owned().await.terminate()
+    }
 }
 
 impl ServerData {
@@ -130,7 +134,7 @@ impl ServerData {
         Self {
             wasm_tasks: HashMap::new(),
             json_tasks: HashMap::new(),
-            id_name_map: HashMap::new(),
+            prog_info: HashMap::new(),
             global_count: 0,
         }
     }
@@ -141,6 +145,37 @@ impl<C> Server<C> {
         Server {
             data,
             marker: PhantomData,
+        }
+    }
+}
+
+struct StartupElements<'a> {
+    id: usize,
+    program_name: String,
+    program_data_buf: Vec<u8>,
+    extra_params: &'a Vec<String>,
+}
+
+impl<'a> StartupElements<'a> {
+    fn new(
+        id: usize,
+        program_name: Option<String>,
+        program_data_buf: Option<swagger::ByteArray>,
+        extra_params: Option<&'a Vec<String>>,
+    ) -> Self {
+        let elements = Self {
+            id,
+            program_name: program_name.unwrap_or("NamelessProg".to_string()),
+            program_data_buf: program_data_buf.unwrap().0,
+            extra_params: extra_params.unwrap(),
+        };
+
+        return elements;
+    }
+
+    fn _validate(&self) -> EcliResult<()> {
+        match *self.program_data_buf {
+            _ => Ok(()),
         }
     }
 }
@@ -158,19 +193,19 @@ where
 
         let server_data = self.data.lock().await;
 
-        let id_and_name: Vec<ListGet200ResponseTasksInner> = server_data
-            .id_name_map
+        let id_and_info: Vec<ListGet200ResponseTasksInner> = server_data
+            .prog_info
             .clone()
             .into_iter()
-            .map(|(id, name)| ListGet200ResponseTasksInner {
+            .map(|(id, info)| ListGet200ResponseTasksInner {
                 id: Some(id as i32),
-                name: Some(name),
+                name: Some(format!("{} - {:?}", info.0, info.1)),
             })
             .collect();
 
         Ok(ListGetResponse::ListOfRunningTasks(ListGet200Response {
             status: Some("Ok".into()),
-            tasks: Some(id_and_name),
+            tasks: Some(id_and_info),
         }))
     }
 
@@ -197,71 +232,31 @@ where
 
         let mut server_data = self.data.lock().await;
 
-        let tmp_dir = TempDir::new();
-
-        let tmp_data_dir = tmp_dir.map_err(|e| ApiError(e.to_string())).unwrap();
-
-        // store btf_data
-        let btf_data_file_path = tmp_data_dir.path().join("btf_data");
-        if let Some(b) = btf_data {
-            if write(&btf_data_file_path, b.as_slice()).is_err() {
-                return Err(ApiError("Save btf data fail".into()));
-            };
-        };
-
-        let _btf_path: Option<String> = if btf_data_file_path.exists() {
-            Some(btf_data_file_path.as_path().display().to_string())
-        } else {
-            None
-        };
-
         let prog_type = program_type.unwrap().parse::<ProgramType>().unwrap();
+
         let id = server_data.global_count.clone();
 
-        match prog_type {
-            ProgramType::WasmModule => {
-                let stdout = ReadableWritePipe::new_vec_buf();
-                let stderr = ReadableWritePipe::new_vec_buf();
-                let config = Config {
-                    callback_export_name: String::from("go-callback"),
-                    wrapper_module_name: String::from("callback-wrapper"),
-                    ..Default::default()
-                };
-                //     String::from("go-callback"),
-                //     String::from("callback-wrapper"),
-                //     // Box::new(wasmtime_wasi::stdio::stdin()),
-                //     // Box::new(stdout.clone()),
-                //     // Box::new(stderr.clone()),
-                //     ..Default::default(),
-                // );
-                let empty_extra_arg = vec![String::default()];
+        let startup_elem = StartupElements::new(id, program_name, program_data_buf, extra_params);
 
-                let args = extra_params.unwrap_or_else(|| &empty_extra_arg).as_slice();
+        let start_result = match prog_type {
+            ProgramType::WasmModule => wasm_start(startup_elem, &mut server_data),
 
-                let (wasm_handle, _) =
-                    run_wasm_bpf_module_async(&program_data_buf.unwrap().0, &args, config).unwrap();
+            ProgramType::JsonEunomia => json_start(startup_elem, &mut server_data),
 
-                server_data.wasm_tasks.insert(
-                    id,
-                    WasmModuleProgram::new(wasm_handle, LogMsg { stdout, stderr }),
-                );
+            ProgramType::Tar => unimplemented!(), // tar_start(startup_elem, btf_data, &mut server_data),
 
-                server_data
-                    .id_name_map
-                    .insert(id, program_name.unwrap_or("NamelessProg".to_string()));
+            _ => unreachable!(),
+        };
 
-                server_data.global_count += 1;
-            }
-            _ => unimplemented!(),
-        }
-
-        Ok(StartPostResponse::ListOfRunningTasks(ListGet200Response {
-            status: Some("Ok".into()),
-            tasks: Some(vec![ListGet200ResponseTasksInner {
-                id: Some(id as i32),
-                name: None,
-            }]),
-        }))
+        start_result.map(|id| {
+            StartPostResponse::ListOfRunningTasks(ListGet200Response {
+                status: Some("Ok".into()),
+                tasks: Some(vec![ListGet200ResponseTasksInner {
+                    id: Some(id),
+                    name: None,
+                }]),
+            })
+        })
     }
 
     /// Stop a task by id or name
@@ -292,21 +287,159 @@ where
 
         let mut server_data = self.data.lock().await;
 
-        let task = server_data
-            .wasm_tasks
+        let prog_info = server_data
+            .prog_info
             .remove(&(id.checked_abs().unwrap() as usize));
 
-        if let Some(t) = task {
-            let handler = t.handler.lock().await;
-
-            if handler.terminate().is_ok() {
-                server_data
-                    .id_name_map
-                    .remove(&(id.checked_abs().unwrap() as usize));
-                return stop_rsp("successful terminated");
-            }
-            return stop_rsp("fail to terminate");
+        if prog_info.is_none() {
+            return Err(ApiError("program with id not found".to_string()));
         }
-        return stop_rsp("program with specified id not found");
+
+        let prog_type = prog_info.clone().unwrap().1;
+
+        match prog_type {
+            ProgramType::JsonEunomia => {
+                let task = server_data
+                    .json_tasks
+                    .remove(&(id.checked_abs().unwrap() as usize));
+                if let Some(t) = task {
+                    if t.stop().await.is_ok() {
+                        return stop_rsp(
+                            format!("{} successful terminated", &prog_info.unwrap().0).as_str(),
+                        );
+                    };
+                }
+                return stop_rsp("fail to terminate");
+            }
+            ProgramType::WasmModule => {
+                let task = server_data
+                    .wasm_tasks
+                    .remove(&(id.checked_abs().unwrap() as usize));
+
+                if let Some(t) = task {
+                    let handler = t.handler.lock().await;
+
+                    if handler.terminate().is_ok() {
+                        server_data
+                            .prog_info
+                            .remove(&(id.checked_abs().unwrap() as usize));
+                        return stop_rsp("successful terminated");
+                    }
+                    return stop_rsp("fail to terminate");
+                }
+            }
+            _ => unimplemented!(),
+        }
+
+        return Err(ApiError("program with id not found".to_string()));
     }
+}
+
+fn json_start(
+    startup_elem: StartupElements,
+    server_data: &mut ServerData,
+) -> Result<i32, ApiError> {
+    let StartupElements {
+        id,
+        program_name,
+        program_data_buf,
+        extra_params,
+    } = startup_elem;
+
+    let data = ProgramConfigData {
+        url: String::default(),
+        use_cache: false,
+        btf_path: None,
+        program_data_buf,
+        extra_arg: extra_params.clone(),
+        prog_type: ProgramType::JsonEunomia,
+        export_format_type: ExportFormatType::ExportPlantText,
+    };
+
+    let stdout = ReadableWritePipe::new_vec_buf();
+    let stderr = ReadableWritePipe::new_vec_buf();
+    let ptr = EunomiaBpfPtr::from_raw_ptr(json_handler(data).unwrap());
+    let prog = JsonEunomiaProgram::new(ptr, LogMsg { stdout, stderr });
+    server_data.json_tasks.insert(id, prog);
+    server_data
+        .prog_info
+        .insert(id, (program_name, ProgramType::JsonEunomia));
+
+    server_data.global_count += 1;
+    Ok(id as i32)
+}
+
+fn wasm_start(
+    startup_elem: StartupElements,
+    server_data: &mut ServerData,
+) -> Result<i32, ApiError> {
+    let StartupElements {
+        id,
+        program_name,
+        program_data_buf,
+        extra_params,
+    } = startup_elem;
+
+    let stdout = ReadableWritePipe::new_vec_buf();
+    let stderr = ReadableWritePipe::new_vec_buf();
+    let config = Config {
+        callback_export_name: String::from("go-callback"),
+        wrapper_module_name: String::from("callback-wrapper"),
+        ..Default::default()
+    };
+    //     String::from("go-callback"),
+    //     String::from("callback-wrapper"),
+    //     // Box::new(wasmtime_wasi::stdio::stdin()),
+    //     // Box::new(stdout.clone()),
+    //     // Box::new(stderr.clone()),
+    //     ..Default::default(),
+    // );
+
+    let (wasm_handle, _) =
+        run_wasm_bpf_module_async(&program_data_buf, &extra_params, config).unwrap();
+
+    server_data.wasm_tasks.insert(
+        id,
+        WasmModuleProgram::new(wasm_handle, LogMsg { stdout, stderr }),
+    );
+
+    server_data
+        .prog_info
+        .insert(id, (program_name, ProgramType::WasmModule));
+
+    server_data.global_count += 1;
+    Ok(id as i32)
+}
+
+#[allow(unused)]
+fn tar_start(
+    startup_elem: StartupElements,
+    btf_data: Option<swagger::ByteArray>,
+    server_data: &mut ServerData,
+) -> Result<i32, ApiError> {
+    let StartupElements {
+        id,
+        program_name,
+        program_data_buf,
+        extra_params,
+    } = startup_elem;
+
+    let tmp_dir = TempDir::new();
+
+    let tmp_data_dir = tmp_dir.map_err(|e| ApiError(e.to_string())).unwrap();
+
+    // store btf_data
+    let btf_data_file_path = tmp_data_dir.path().join("btf_data");
+    if let Some(b) = btf_data {
+        if write(&btf_data_file_path, b.as_slice()).is_err() {
+            return Err(ApiError("Save btf data fail".into()));
+        };
+    };
+
+    let _btf_path: Option<String> = if btf_data_file_path.exists() {
+        Some(btf_data_file_path.as_path().display().to_string())
+    } else {
+        None
+    };
+    Err(ApiError("not implemented".to_string()))
 }
