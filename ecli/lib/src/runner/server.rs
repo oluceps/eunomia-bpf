@@ -1,4 +1,5 @@
-use crate::config::*;
+use crate::eunomia_bpf::{destroy_eunomia_skel, eunomia_bpf};
+use crate::{config::*, EcliResult};
 use async_trait::async_trait;
 use eunomia_rs::TempDir;
 use log::info;
@@ -6,6 +7,7 @@ use openapi_client::models::ListGet200ResponseTasksInner;
 use openapi_client::server::MakeService;
 use openapi_client::{models::*, Api, ListGetResponse, StartPostResponse, StopPostResponse};
 use std::marker::PhantomData;
+use std::ptr::NonNull;
 use std::{collections::HashMap, fs::write};
 use std::{io::Cursor, sync::Arc};
 use swagger::auth::MakeAllowAllAuthenticator;
@@ -26,7 +28,6 @@ pub async fn create(addr: String, _https: bool, shutdown_rx: Receiver<()>) {
     let service = MakeAllowAllAuthenticator::new(service, "cosmo");
 
     let service = openapi_client::server::context::MakeAddContext::<_, EmptyContext>::new(service);
-
     // Using HTTP
     hyper::server::Server::bind(&addr)
         .serve(service)
@@ -50,14 +51,50 @@ pub struct Server<C> {
 
 #[derive(Clone)]
 pub struct ServerData {
-    wasm_tasks: HashMap<usize, WasmProgram>,
+    wasm_tasks: HashMap<usize, WasmModuleProgram>,
+    json_tasks: HashMap<usize, JsonEunomiaProgram>,
     id_name_map: HashMap<usize, String>,
     global_count: usize,
 }
 
+struct EunomiaBpfPtr(NonNull<eunomia_bpf>);
+
+unsafe impl Send for EunomiaBpfPtr {}
+unsafe impl Sync for EunomiaBpfPtr {}
+
+impl Drop for EunomiaBpfPtr {
+    fn drop(&mut self) {
+        let _ = self.terminate();
+    }
+}
+
+impl EunomiaBpfPtr {
+    fn new(p: *mut eunomia_bpf) -> Self {
+        let ptr = NonNull::<eunomia_bpf>::new(p).expect("ptr of `eunomia_bpf` is null!");
+        Self(ptr)
+    }
+
+    fn get(&mut self) -> *mut eunomia_bpf {
+        NonNull::as_ptr(self.0)
+    }
+
+    fn terminate(&mut self) -> EcliResult<()> {
+        unsafe { destroy_eunomia_skel(self.get()) }
+        Ok(())
+    }
+}
+
 #[derive(Clone)]
-pub struct WasmProgram {
+pub struct WasmModuleProgram {
     handler: Arc<Mutex<WasmProgramHandle>>,
+
+    #[allow(dead_code)]
+    log_msg: LogMsg,
+}
+
+#[derive(Clone)]
+pub struct JsonEunomiaProgram {
+    ptr: Arc<Mutex<EunomiaBpfPtr>>,
 
     #[allow(dead_code)]
     log_msg: LogMsg,
@@ -70,10 +107,19 @@ struct LogMsg {
     stderr: ReadableWritePipe<Cursor<Vec<u8>>>,
 }
 
-impl WasmProgram {
+impl WasmModuleProgram {
     fn new(handler: WasmProgramHandle, log_msg: LogMsg) -> Self {
         Self {
             handler: Arc::new(Mutex::new(handler)),
+            log_msg,
+        }
+    }
+}
+
+impl JsonEunomiaProgram {
+    fn new(ptr: EunomiaBpfPtr, log_msg: LogMsg) -> Self {
+        Self {
+            ptr: Arc::new(Mutex::new(ptr)),
             log_msg,
         }
     }
@@ -83,6 +129,7 @@ impl ServerData {
     fn new() -> Self {
         Self {
             wasm_tasks: HashMap::new(),
+            json_tasks: HashMap::new(),
             id_name_map: HashMap::new(),
             global_count: 0,
         }
@@ -194,9 +241,10 @@ where
                 let (wasm_handle, _) =
                     run_wasm_bpf_module_async(&program_data_buf.unwrap().0, &args, config).unwrap();
 
-                server_data
-                    .wasm_tasks
-                    .insert(id, WasmProgram::new(wasm_handle, LogMsg { stdout, stderr }));
+                server_data.wasm_tasks.insert(
+                    id,
+                    WasmModuleProgram::new(wasm_handle, LogMsg { stdout, stderr }),
+                );
 
                 server_data
                     .id_name_map
