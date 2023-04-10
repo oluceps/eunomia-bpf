@@ -4,6 +4,12 @@ LIBEUNOMIA := ../bpf-loader/build/lib/Release/libeunomia.a
 build: $(LIBEUNOMIA)
 	cargo build --release
 
+eserver: $(LIBEUNOMIA)
+	cargo build --bin eserver --release
+
+ecli: $(LIBEUNOMIA)
+	cargo build --bin ecli --release
+
 $(LIBEUNOMIA):
 	$(MAKE) -C ../bpf-loader install
 
