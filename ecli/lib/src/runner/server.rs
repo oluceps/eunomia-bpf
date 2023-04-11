@@ -1,15 +1,17 @@
-use actix_web::error::ErrorBadRequest;
-use actix_web::{get, post};
+use std::time::Instant;
+
+use actix_web::{get, post, HttpRequest};
 use actix_web::{web, App, HttpServer, Responder, Result};
+use actix_web_actors::ws;
 
 use crate::config::*;
-use crate::runner::models::{ListGet200ResponseTasksInner, LogPostRequest};
+use crate::runner::models::ListGet200ResponseTasksInner;
 use crate::runner::response::*;
 use crate::runner::utils::*;
 use log::info;
 use tokio::sync::Mutex;
 
-struct AppState {
+pub struct AppState {
     server: Mutex<ServerData>,
 }
 
@@ -111,12 +113,6 @@ async fn stop_post(
     info!("Recieved stop command, but has not fully implemented");
     info!("stop with id: {:?}", &list_get200_response_tasks_inner.id);
 
-    // info!(
-    //     "stop_post({:?}) - X-Span-ID: {:?}",
-    //     list_get200_response_tasks_inner,
-    //     context.get().0.clone()
-    // );
-
     let id = list_get200_response_tasks_inner.id.unwrap();
 
     let mut server_data = data.server.lock().await;
@@ -134,33 +130,44 @@ async fn stop_post(
     ))
 }
 
+use crate::runner::ws_log::LogWs;
 /// get log
 #[get("/log")]
 async fn log_post(
     data: web::Data<AppState>,
-    log_post_request: web::Json<LogPostRequest>,
+    req: HttpRequest,
+    stream: web::Payload,
 ) -> Result<impl Responder> {
-    let id = log_post_request.id.unwrap().checked_abs().unwrap() as usize;
+    // let id = log_post_request.id.unwrap().checked_abs().unwrap() as usize;
 
-    let mut server_data = data.server.lock().await;
+    // let mut logs = WsLog::new(false, &mut server_data);
 
-    let prog_type = server_data.get_type_of(id);
+    let server_data = data.server.lock().await.clone();
 
-    if prog_type.is_none() {
-        return Err(ErrorBadRequest(""));
-    }
+    ws::start(
+        LogWs {
+            data: server_data,
+            hb: Instant::now(),
+        },
+        &req,
+        stream,
+    )
 
-    let (out, err) = match prog_type.unwrap() {
-        ProgramType::WasmModule => {
-            let prog = server_data.wasm_tasks.get_mut(&id).unwrap();
+    // let prog_type = server_data.get_type_of(id);
 
-            let out = prog.log_msg.get_stdout();
-            let err = prog.log_msg.get_stderr();
+    // if prog_type.is_none() {
+    //     return Err(ErrorBadRequest(""));
+    // }
 
-            (out, err)
-        }
-        _ => unimplemented!(),
-    };
+    // let (out, err) = match prog_type.unwrap() {
+    //     ProgramType::WasmModule => {
+    //         let prog = server_data.wasm_tasks.get_mut(&id).unwrap();
 
-    Ok(web::Json(LogPostResponse::gen_rsp(Some(out), Some(err))))
+    //         let out = prog.log_msg.get_stdout();
+    //         let err = prog.log_msg.get_stderr();
+
+    //         (out, err)
+    //     }
+    //     _ => unimplemented!(),
+    // };
 }

@@ -11,13 +11,10 @@ use std::{
 };
 pub mod models;
 pub mod response;
-
+pub mod ws_log;
 use log::{debug, info};
-use models::{LogPost200Response, LogPostRequest};
 use response::LogPostResponse;
 use serde_json::json;
-use swagger::{make_context, Has, XSpanIdString};
-use tokio::time;
 use url::Url;
 
 pub use crate::ClientSubCommand;
@@ -43,7 +40,6 @@ pub struct RunArgs {
 
 pub mod server;
 pub mod utils;
-use server::*;
 
 impl Default for RunArgs {
     fn default() -> Self {
@@ -202,6 +198,7 @@ pub async fn start_server(args: RemoteArgs) -> EcliResult<()> {
 }
 
 use reqwest::Client;
+use tungstenite::{connect, Message};
 
 pub async fn client_action(args: RemoteArgs) -> EcliResult<()> {
     let ClientArgs {
@@ -262,7 +259,7 @@ pub async fn client_action(args: RemoteArgs) -> EcliResult<()> {
                 None => swagger::ByteArray(Vec::new()),
             };
 
-            let req = json!(crate::runner::StartReq {
+            let req = json!(crate::runner::server::StartReq {
                 program_data_buf: Some(swagger::ByteArray(prog_data.program_data_buf)),
                 program_type: Some(format!("{:?}", prog_data.prog_type)),
                 program_name: program_name,
@@ -320,26 +317,28 @@ pub async fn client_action(args: RemoteArgs) -> EcliResult<()> {
         }
 
         ClientActions::Log => {
-            // loop {
-            //     let post_req = LogPostRequest { id: Some(id[0]) };
-            //     let result = client.log_post(post_req).await;
+            let url = url::Url::parse(format!("ws://{addr}:{port}/log").as_str()).unwrap();
+            let (mut socket, _) = connect(url).unwrap();
 
-            //     // println!("{:?} from endpoint:  {endpoint}:{port}", result);
-            //     let LogPostResponse::SendLog(LogPost200Response { stdout, stderr }) =
-            //         result.unwrap();
+            socket
+                .write_message(Message::Text(id.get(0).unwrap().to_string()))
+                .unwrap();
 
-            //     if let Some(s) = stdout {
-            //         if !s.is_empty() {
-            //             println!("{}", s);
-            //         }
-            //     }
-            //     if let Some(s) = stderr {
-            //         if !s.is_empty() {
-            //             eprintln!("{}", s);
-            //         }
-            //     }
-            //     time::sleep(time::Duration::from_secs(1)).await;
-            // }
+            loop {
+                match socket.read_message() {
+                    Ok(Message::Text(text)) => {
+                        // Handle the received text message
+                        println!("{}", text);
+                    }
+
+                    Err(e) => {
+                        // Handle the error
+                        eprintln!("Error reading message: {}", e);
+                        break;
+                    }
+                    _ => todo!(),
+                }
+            }
 
             #[allow(unused)]
             Ok(())
