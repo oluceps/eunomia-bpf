@@ -433,25 +433,3 @@ impl LogPostResponse {
         LogPostResponse::SendLog(LogPost200Response { stdout, stderr })
     }
 }
-
-macro_rules! impl_responder {
-    ($n: ident) => {
-        impl Responder for $n {
-            type Body = BoxBody;
-
-            fn respond_to(self, _req: &HttpRequest) -> HttpResponse<Self::Body> {
-                let body = serde_json::to_string(&self).unwrap();
-
-                // Create response and set content type
-                HttpResponse::Ok()
-                    .content_type(ContentType::json())
-                    .body(body)
-            }
-        }
-    };
-}
-
-impl_responder!(StartPostResponse);
-impl_responder!(StopPostResponse);
-impl_responder!(ListGetResponse);
-impl_responder!(LogPostResponse);
