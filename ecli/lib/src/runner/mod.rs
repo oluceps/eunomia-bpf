@@ -143,7 +143,7 @@ pub struct RemoteArgs {
 pub struct ClientArgs {
     pub action_type: ClientActions,
     pub id: Vec<i32>,
-    pub endpoint: String,
+    pub addr: String,
     pub port: u16,
     pub secure: bool,
     pub run_args: RunArgs,
@@ -194,22 +194,26 @@ pub async fn start_server(args: RemoteArgs) -> EcliResult<()> {
         let dst: Dst = Dst(addr, port);
 
         println!("Server start at {}", dst.to_string());
-        let (_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+        // let (_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
-        server::create(dst, secure, shutdown_rx).await;
+        let _ = server::create(dst, secure).await;
     }
     Ok(())
 }
+
+use reqwest::Client;
 
 pub async fn client_action(args: RemoteArgs) -> EcliResult<()> {
     let ClientArgs {
         action_type,
         id,
-        endpoint,
+        addr,
         port,
         secure,
         run_args,
     } = args.client.unwrap();
+
+    let client = Client::new();
 
     if secure {
         return Err(EcliError::Other(format!(
@@ -220,112 +224,129 @@ pub async fn client_action(args: RemoteArgs) -> EcliResult<()> {
     let url = format!(
         "{}://{}:{}",
         if secure { "https" } else { "http" },
-        endpoint,
+        addr,
         port
     );
-    Ok(())
 
-    // let client = ();
-    // match action_type {
-    //     ClientActions::List => {
-    //         let result = client.list_get().await;
-    //         let ListGetResponse::ListOfRunningTasks(rsp_msg) = result.as_ref().unwrap();
-    //         println!("{}", json!(rsp_msg));
-    //         // info!(
-    //         //     "{:?} (X-Span-ID: {:?})",
-    //         //     result,
-    //         //     (client.context() as &dyn Has<XSpanIdString>).get().clone()
-    //         // );
+    match action_type {
+        ClientActions::List => {
+            let mut url = url.clone();
+            url.push_str("/list");
 
-    //         Ok(())
-    //     }
+            let rsp = client.get(url).send().await;
+            info!("{:?}", &rsp);
+            let rsp_json_text = rsp.unwrap().text().await.unwrap();
 
-    //     ClientActions::Start => {
-    //         let program_name: Option<String> = PathBuf::from(run_args.file.clone())
-    //             .file_name()
-    //             .map(|n| n.to_string_lossy().to_string());
+            let StartPostResponse::ListOfRunningTasks(rsp_msg) =
+                serde_json::from_str(rsp_json_text.as_str()).expect("parse resp body fail");
 
-    //         let prog_data = ProgramConfigData::async_try_from(run_args).await?;
+            println!("{}", json!(rsp_msg));
 
-    //         let btf_data = match prog_data.btf_path {
-    //             Some(d) => {
-    //                 let mut file = File::open(d).map_err(|e| EcliError::IOErr(e)).unwrap();
-    //                 let mut buffer = Vec::new();
-    //                 file.read_to_end(&mut buffer).unwrap_or_default();
-    //                 swagger::ByteArray(buffer)
-    //             }
-    //             None => swagger::ByteArray(Vec::new()),
-    //         };
+            Ok(())
+        }
 
-    //         let result = client
-    //             .start_post(
-    //                 Some(swagger::ByteArray(prog_data.program_data_buf)),
-    //                 Some(format!("{:?}", prog_data.prog_type)),
-    //                 program_name,
-    //                 Some(btf_data),
-    //                 Some(&prog_data.extra_arg),
-    //             )
-    //             .await;
+        ClientActions::Start => {
+            let program_name: Option<String> = PathBuf::from(run_args.file.clone())
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string());
 
-    //         let StartPostResponse::ListOfRunningTasks(rsp_msg) = result.as_ref().unwrap();
+            let prog_data = ProgramConfigData::async_try_from(run_args).await?;
 
-    //         println!("{}", json!(rsp_msg));
-    //         // info!(
-    //         //     "{:?} (X-Span-ID: {:?})",
-    //         //     result,
-    //         //     (client.context() as &dyn Has<XSpanIdString>).get().clone()
-    //         // );
-    //         Ok(())
-    //     }
+            let btf_data = match prog_data.btf_path {
+                Some(d) => {
+                    let mut file = File::open(d).map_err(|e| EcliError::IOErr(e)).unwrap();
+                    let mut buffer = Vec::new();
+                    file.read_to_end(&mut buffer).unwrap_or_default();
+                    swagger::ByteArray(buffer)
+                }
+                None => swagger::ByteArray(Vec::new()),
+            };
 
-    //     ClientActions::Stop => {
-    //         for per_id in id {
-    //             let inner = models::ListGet200ResponseTasksInner {
-    //                 id: Some(per_id),
-    //                 name: None,
-    //             };
+            let req = json!(crate::runner::StartReq {
+                program_data_buf: Some(swagger::ByteArray(prog_data.program_data_buf)),
+                program_type: Some(format!("{:?}", prog_data.prog_type)),
+                program_name: program_name,
+                btf_data: Some(btf_data),
+                extra_params: Some(prog_data.extra_arg),
+            });
 
-    //             let result = client.stop_post(inner).await;
+            let mut url = url.clone();
+            url.push_str("/start");
+            let rsp = client
+                .post(url)
+                .header("Content-Type", "application/json")
+                .body(req.to_string())
+                .send()
+                .await;
 
-    //             let StopPostResponse::StatusOfStoppingTheTask(rsp_msg) = result.as_ref().unwrap();
-    //             println!("{}", json!(rsp_msg));
-    //             // info!(
-    //             //     "{:?} (X-Span-ID: {:?})",
-    //             //     result,
-    //             //     (client.context() as &dyn Has<XSpanIdString>).get().clone()
-    //             // );
-    //         }
-    //         Ok(())
-    //     }
+            info!("{:?}", &rsp);
 
-    //     ClientActions::Log => {
-    //         loop {
-    //             let post_req = LogPostRequest { id: Some(id[0]) };
-    //             let result = client.log_post(post_req).await;
+            let rsp_json_text = rsp.unwrap().text().await.unwrap();
 
-    //             // println!("{:?} from endpoint:  {endpoint}:{port}", result);
-    //             let LogPostResponse::SendLog(LogPost200Response { stdout, stderr }) =
-    //                 result.unwrap();
+            let StartPostResponse::ListOfRunningTasks(rsp_msg) =
+                serde_json::from_str(rsp_json_text.as_str()).expect("parse resp body fail");
 
-    //             if let Some(s) = stdout {
-    //                 if !s.is_empty() {
-    //                     println!("{}", s);
-    //                 }
-    //             }
-    //             if let Some(s) = stderr {
-    //                 if !s.is_empty() {
-    //                     eprintln!("{}", s);
-    //                 }
-    //             }
-    //             time::sleep(time::Duration::from_secs(1)).await;
-    //         }
+            println!("{}", json!(rsp_msg));
 
-    //         #[allow(unused)]
-    //         Ok(())
-    //     }
+            Ok(())
+        }
 
-    //     _ => unimplemented!(),
-    // }
+        ClientActions::Stop => {
+            for per_id in id {
+                let req_body = json!(models::ListGet200ResponseTasksInner {
+                    id: Some(per_id),
+                    name: None,
+                });
+
+                let mut url = url.clone();
+                url.push_str("/stop");
+                let rsp = client
+                    .post(url)
+                    .header("Content-Type", "application/json")
+                    .body(req_body.to_string())
+                    .send()
+                    .await;
+
+                info!("{:?}", &rsp);
+
+                let rsp_json_text = rsp.unwrap().text().await.unwrap();
+
+                let StopPostResponse::StatusOfStoppingTheTask(rsp_msg) =
+                    serde_json::from_str(rsp_json_text.as_str()).expect("parse response body fail");
+
+                println!("{}", json!(rsp_msg));
+            }
+            Ok(())
+        }
+
+        ClientActions::Log => {
+            // loop {
+            //     let post_req = LogPostRequest { id: Some(id[0]) };
+            //     let result = client.log_post(post_req).await;
+
+            //     // println!("{:?} from endpoint:  {endpoint}:{port}", result);
+            //     let LogPostResponse::SendLog(LogPost200Response { stdout, stderr }) =
+            //         result.unwrap();
+
+            //     if let Some(s) = stdout {
+            //         if !s.is_empty() {
+            //             println!("{}", s);
+            //         }
+            //     }
+            //     if let Some(s) = stderr {
+            //         if !s.is_empty() {
+            //             eprintln!("{}", s);
+            //         }
+            //     }
+            //     time::sleep(time::Duration::from_secs(1)).await;
+            // }
+
+            #[allow(unused)]
+            Ok(())
+        }
+
+        _ => unimplemented!(),
+    }
 }
 
 #[cfg(test)]

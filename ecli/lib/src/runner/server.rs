@@ -7,7 +7,6 @@ use crate::runner::models::{ListGet200ResponseTasksInner, LogPostRequest};
 use crate::runner::response::*;
 use crate::runner::utils::*;
 use log::info;
-use tokio::sync::oneshot::Receiver;
 use tokio::sync::Mutex;
 
 struct AppState {
@@ -22,11 +21,7 @@ impl AppState {
     }
 }
 
-pub async fn create(
-    dst: crate::runner::Dst,
-    _https: bool,
-    _shutdown_rx: Receiver<()>,
-) -> std::io::Result<()> {
+pub async fn create(dst: crate::runner::Dst, _https: bool) -> std::io::Result<()> {
     let state = web::Data::new(AppState::new());
 
     HttpServer::new(move || {
@@ -46,16 +41,16 @@ pub async fn create(
 
 /// Get list of running tasks
 #[get("/list")]
-async fn list_get(data: web::Data<ServerData>) -> Result<impl Responder> {
+async fn list_get(data: web::Data<AppState>) -> Result<impl Responder> {
     // let context = context.clone();
     info!("Recieved List request");
     // info!("list_get() - X-Span-ID: {:?}", context.get().0.clone());
 
-    let server_data = data;
+    let server_data = data.server.lock().await;
 
     let listed_info: Vec<ListGet200ResponseTasksInner> = server_data.list_all_task();
 
-    Ok(ListGetResponse::gen_rsp(listed_info))
+    Ok(web::Json(ListGetResponse::gen_rsp(listed_info)))
 }
 
 use serde::{Deserialize, Serialize};
@@ -99,9 +94,11 @@ async fn start_post(
         _ => unreachable!(),
     };
 
-    start_result
-        .map(|id| StartPostResponse::gen_rsp(id))
-        .map_err(|_e| actix_web::error::ErrorBadRequest(""))
+    Ok(web::Json(
+        start_result
+            .map(|id| StartPostResponse::gen_rsp(id))
+            .unwrap(),
+    ))
 }
 
 /// Stop a task by id or name
@@ -129,13 +126,12 @@ async fn stop_post(
         .remove(&(id.checked_abs().unwrap() as usize));
 
     if prog_info.is_none() {
-        return Ok(StopPostResponse::gen_rsp("NotFound"));
+        return Ok(web::Json(StopPostResponse::gen_rsp("NotFound")));
     }
 
-    server_data
-        .stop_prog(id, prog_info.unwrap())
-        .await
-        .map_err(|_e| actix_web::error::ErrorBadRequest(""))
+    Ok(web::Json(
+        server_data.stop_prog(id, prog_info.unwrap()).await.unwrap(),
+    ))
 }
 
 /// get log
@@ -166,5 +162,5 @@ async fn log_post(
         _ => unimplemented!(),
     };
 
-    Ok(LogPostResponse::gen_rsp(Some(out), Some(err)))
+    Ok(web::Json(LogPostResponse::gen_rsp(Some(out), Some(err))))
 }
