@@ -99,9 +99,11 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for LogWs {
                 self.hb = Instant::now();
             }
             ws::Message::Text(text) => {
-                let id: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+                let json_msg: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
 
-                let prog_id = usize::try_from(id["id"].as_i64().unwrap()).unwrap();
+                let prog_id = usize::try_from(json_msg["id"].as_i64().unwrap()).unwrap();
+
+                let follow = bool::try_from(json_msg["follow"].as_bool().unwrap()).unwrap();
 
                 let prog_type = self.data.get_type_of(prog_id).unwrap();
 
@@ -118,10 +120,19 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for LogWs {
 
                         let mut buffer = MsgBuf::new();
 
-                        for u in log_inner.into_iter() {
-                            if buffer.msg_filled(&u) {
-                                ctx.text(buffer.to_string())
+                        if follow {
+                            for u in log_inner.clone().into_iter() {
+                                if buffer.msg_filled(&u) {
+                                    ctx.text(buffer.to_string())
+                                }
                             }
+                        } else {
+                            ctx.text(log_inner.read_all().unwrap());
+                            ctx.close(Some(ws::CloseReason {
+                                code: ws::CloseCode::Normal,
+                                description: Some("Transport complete".to_string()),
+                            }));
+                            ctx.stop();
                         }
                     }
                     _ => todo!(),
