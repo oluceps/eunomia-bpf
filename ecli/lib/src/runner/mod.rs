@@ -11,10 +11,11 @@ use std::{
 };
 pub mod models;
 pub mod response;
-pub mod ws_log;
+// pub mod ws_log;
 use log::{debug, info};
 use response::LogPostResponse;
 use serde_json::json;
+use tokio::time;
 use url::Url;
 
 pub use crate::ClientSubCommand;
@@ -190,7 +191,6 @@ pub async fn start_server(args: RemoteArgs) -> EcliResult<()> {
         let dst: Dst = Dst(addr, port);
 
         println!("Server start at {}", dst.to_string());
-        // let (_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
         let _ = server::create(dst, secure).await;
     }
@@ -198,7 +198,8 @@ pub async fn start_server(args: RemoteArgs) -> EcliResult<()> {
 }
 
 use reqwest::Client;
-use tungstenite::{connect, Message};
+
+use self::models::{LogPost200Response, LogPostRequest};
 
 pub async fn client_action(args: RemoteArgs) -> EcliResult<()> {
     let ClientArgs {
@@ -317,29 +318,40 @@ pub async fn client_action(args: RemoteArgs) -> EcliResult<()> {
         }
 
         ClientActions::Log => {
-            let url = url::Url::parse(format!("ws://{addr}:{port}/log").as_str()).unwrap();
-            let (mut socket, _) = connect(url).unwrap();
-
-            socket
-                .write_message(Message::Text(id.get(0).unwrap().to_string()))
-                .unwrap();
-
             loop {
-                match socket.read_message() {
-                    Ok(Message::Text(text)) => {
-                        // Handle the received text message
-                        println!("{}", text);
-                    }
+                let mut url = url.clone();
+                url.push_str("/log");
 
-                    Err(e) => {
-                        // Handle the error
-                        eprintln!("Error reading message: {}", e);
-                        break;
+                let req_body = LogPostRequest {
+                    id: Some(id.get(0).unwrap().clone()),
+                    follow: true,
+                };
+
+                let rsp = client
+                    .post(url)
+                    .header("Content-Type", "application/json")
+                    .body(json!(req_body).to_string())
+                    .send()
+                    .await;
+
+                info!("{:?}", &rsp);
+
+                let rsp_json_text = rsp.unwrap().text().await.unwrap();
+                let LogPostResponse::SendLog(LogPost200Response { stdout, stderr }) =
+                    serde_json::from_str(rsp_json_text.as_str()).expect("parse response body fail");
+
+                if let Some(s) = stdout {
+                    if !s.is_empty() {
+                        print!("{}", s);
                     }
-                    _ => todo!(),
                 }
+                if let Some(s) = stderr {
+                    if !s.is_empty() {
+                        eprint!("{}", s);
+                    }
+                }
+                time::sleep(time::Duration::from_millis(500)).await;
             }
-
             #[allow(unused)]
             Ok(())
         }
