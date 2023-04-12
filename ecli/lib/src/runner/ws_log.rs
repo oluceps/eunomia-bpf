@@ -64,18 +64,30 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for LogWs {
                 self.hb = Instant::now();
             }
             ws::Message::Text(text) => {
-                let id = text.trim().parse::<usize>().unwrap();
+                let id: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
 
-                let prog_type = self.data.get_type_of(id).unwrap();
+                let prog_id = usize::try_from(id["id"].as_i64().unwrap()).unwrap();
+
+                let prog_type = self.data.get_type_of(prog_id).unwrap();
 
                 match prog_type {
                     crate::config::ProgramType::WasmModule => {
-                        let mut log = self.data.wasm_tasks.get(&id).unwrap().log_msg.clone();
+                        // let mut log = self.data.wasm_tasks.get(&prog_id).unwrap().log_msg.clone();
 
-                        #[allow(unused)]
-                        loop {
-                            tokio::time::sleep(tokio::time::Duration::from_secs(1));
-                            ctx.text(log.stdout.read())
+                        let b = self
+                            .data
+                            .wasm_tasks
+                            .get(&prog_id)
+                            .unwrap()
+                            .log_msg
+                            .stdout
+                            .clone();
+                        // #[allow(unused)]
+                        // loop {
+                        // }
+                        // ctx.text("Test".to_string())
+                        for u in b.into_iter() {
+                            ctx.text(u.to_string())
                         }
                     }
                     _ => todo!(),

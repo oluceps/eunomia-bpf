@@ -319,25 +319,43 @@ pub struct LogMsg {
 
 #[derive(Clone)]
 pub struct LogMsgInner {
-    pipe: ReadableWritePipe<Cursor<Vec<u8>>>,
+    pub pipe: ReadableWritePipe<Cursor<Vec<u8>>>,
     // TODO: multi connection?
-    read_length: usize,
+    position: usize,
 }
 
-impl LogMsgInner {
-    pub fn read(&mut self) -> String {
-        let guard = self.pipe.get_read_lock();
-        let read_len = self.read_length;
+// impl LogMsgInner {
+//     pub fn read(&mut self) -> String {
+//         let guard = self.pipe.get_read_lock();
+//         let read_len = self.position;
 
-        let vec_ref = guard.get_ref();
+//         let vec_ref = guard.get_ref();
 
-        if vec_ref.len() > read_len {
-            let freezed = String::from_utf8(vec_ref[read_len..].to_vec()).unwrap();
-            self.read_length = vec_ref.len();
-            return freezed;
-        } else {
-            return String::default();
-        };
+//         if vec_ref.len() > read_len {
+//             let freezed = String::from_utf8(vec_ref[read_len..].to_vec()).unwrap();
+//             self.position = vec_ref.len();
+//             return freezed;
+//         } else {
+//             return String::default();
+//         };
+//     }
+// }
+
+impl Iterator for LogMsgInner {
+    type Item = char;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let cursor = self.pipe.get_read_lock();
+
+        let bytes = cursor.get_ref();
+
+        if self.position >= bytes.len() {
+            return None;
+        }
+
+        let byte = bytes[self.position];
+        self.position += 1;
+        Some(byte as char)
     }
 }
 
@@ -349,11 +367,11 @@ impl LogMsg {
         Self {
             stdout: LogMsgInner {
                 pipe: stdout,
-                read_length: 0,
+                position: 0,
             },
             stderr: LogMsgInner {
                 pipe: stderr,
-                read_length: 0,
+                position: 0,
             },
         }
     }

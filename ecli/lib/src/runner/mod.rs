@@ -200,6 +200,8 @@ pub async fn start_server(args: RemoteArgs) -> EcliResult<()> {
 use reqwest::Client;
 use tungstenite::{connect, Message};
 
+use self::models::LogPostRequest;
+
 pub async fn client_action(args: RemoteArgs) -> EcliResult<()> {
     let ClientArgs {
         action_type,
@@ -320,8 +322,12 @@ pub async fn client_action(args: RemoteArgs) -> EcliResult<()> {
             let url = url::Url::parse(format!("ws://{addr}:{port}/log").as_str()).unwrap();
             let (mut socket, _) = connect(url).unwrap();
 
+            let req = LogPostRequest {
+                id: Some(*id.get(0).unwrap()),
+            };
+
             socket
-                .write_message(Message::Text(id.get(0).unwrap().to_string()))
+                .write_message(Message::Text(json!(req).to_string()))
                 .unwrap();
 
             loop {
@@ -338,6 +344,7 @@ pub async fn client_action(args: RemoteArgs) -> EcliResult<()> {
                     }
                     _ => todo!(),
                 }
+                tokio::time::sleep(std::time::Duration::from_millis(30)).await
             }
 
             #[allow(unused)]
