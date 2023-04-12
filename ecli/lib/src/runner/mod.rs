@@ -12,6 +12,7 @@ use std::{
 pub mod models;
 pub mod response;
 pub mod ws_log;
+use actix_web_actors::ws;
 use log::{debug, info};
 use response::LogPostResponse;
 use serde_json::json;
@@ -324,25 +325,39 @@ pub async fn client_action(args: RemoteArgs) -> EcliResult<()> {
 
             let req = LogPostRequest {
                 id: Some(*id.get(0).unwrap()),
+                follow: true,
             };
 
+            // send websocket req, contain jsonlized id and if follow log
             socket
                 .write_message(Message::Text(json!(req).to_string()))
                 .unwrap();
 
             loop {
                 match socket.read_message() {
-                    Ok(Message::Text(text)) => {
+                    Ok(Message::Text(log)) => {
                         // Handle the received text message
-                        print!("{}", text);
+                        print!("{log}");
                     }
 
+                    // handle heartbeat, and anything others
+                    Ok(_) => (),
+
                     Err(e) => {
-                        // Handle the error
-                        eprint!("Error reading message: {}", e);
-                        break;
+                        match e {
+                            // Normal closed by remote
+                            tungstenite::Error::ConnectionClosed => {
+                                println!();
+                                println!("Log transport complete");
+                                break;
+                            }
+                            _ => {
+                                // Handle the error
+                                println!("{e}");
+                                break;
+                            }
+                        }
                     }
-                    _ => todo!(),
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(5)).await
             }

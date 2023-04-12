@@ -359,6 +359,15 @@ impl Iterator for LogMsgInner {
     }
 }
 
+impl LogMsgInner {
+    pub fn read_all(&self) -> Result<String, std::string::FromUtf8Error> {
+        let cursor = self.pipe.get_read_lock();
+        let bytes = cursor.get_ref().clone();
+
+        String::from_utf8(bytes)
+    }
+}
+
 impl LogMsg {
     pub fn new(
         stdout: ReadableWritePipe<Cursor<Vec<u8>>>,
