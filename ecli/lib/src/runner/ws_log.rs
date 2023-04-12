@@ -43,6 +43,41 @@ impl LogWs {
     }
 }
 
+const BUFFER_SIZE: usize = 64;
+
+struct MsgBuf {
+    buffer: [u8; BUFFER_SIZE],
+    count: usize,
+}
+
+impl MsgBuf {
+    fn new() -> Self {
+        Self {
+            buffer: [0u8; BUFFER_SIZE],
+            count: 0,
+        }
+    }
+
+    fn msg_filled(&mut self, message: &u8) -> bool {
+        let remaining_space = BUFFER_SIZE - self.count;
+
+        if remaining_space == 0 {
+            self.count = 0;
+            return true;
+        }
+
+        self.buffer[self.count] = *message;
+        self.count += 1;
+        false
+    }
+}
+
+impl ToString for MsgBuf {
+    fn to_string(&self) -> String {
+        String::from_utf8(self.buffer.to_vec()).expect("unexpected char")
+    }
+}
+
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for LogWs {
     fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
         let msg = match msg {
@@ -72,9 +107,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for LogWs {
 
                 match prog_type {
                     crate::config::ProgramType::WasmModule => {
-                        // let mut log = self.data.wasm_tasks.get(&prog_id).unwrap().log_msg.clone();
-
-                        let b = self
+                        let log_inner = self
                             .data
                             .wasm_tasks
                             .get(&prog_id)
@@ -82,12 +115,13 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for LogWs {
                             .log_msg
                             .stdout
                             .clone();
-                        // #[allow(unused)]
-                        // loop {
-                        // }
-                        // ctx.text("Test".to_string())
-                        for u in b.into_iter() {
-                            ctx.text(u.to_string())
+
+                        let mut buffer = MsgBuf::new();
+
+                        for u in log_inner.into_iter() {
+                            if buffer.msg_filled(&u) {
+                                ctx.text(buffer.to_string())
+                            }
                         }
                     }
                     _ => todo!(),

@@ -342,7 +342,7 @@ pub struct LogMsgInner {
 // }
 
 impl Iterator for LogMsgInner {
-    type Item = char;
+    type Item = u8;
 
     fn next(&mut self) -> Option<Self::Item> {
         let cursor = self.pipe.get_read_lock();
@@ -355,7 +355,7 @@ impl Iterator for LogMsgInner {
 
         let byte = bytes[self.position];
         self.position += 1;
-        Some(byte as char)
+        Some(byte)
     }
 }
 

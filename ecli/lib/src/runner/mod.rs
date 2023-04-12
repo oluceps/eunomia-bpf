@@ -334,17 +334,17 @@ pub async fn client_action(args: RemoteArgs) -> EcliResult<()> {
                 match socket.read_message() {
                     Ok(Message::Text(text)) => {
                         // Handle the received text message
-                        println!("{}", text);
+                        print!("{}", text);
                     }
 
                     Err(e) => {
                         // Handle the error
-                        eprintln!("Error reading message: {}", e);
+                        eprint!("Error reading message: {}", e);
                         break;
                     }
                     _ => todo!(),
                 }
-                tokio::time::sleep(std::time::Duration::from_millis(30)).await
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await
             }
 
             #[allow(unused)]
