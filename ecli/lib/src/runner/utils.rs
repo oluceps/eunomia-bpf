@@ -274,7 +274,6 @@ impl ServerData {
 pub struct WasmModuleProgram {
     pub handler: Arc<Mutex<WasmProgramHandle>>,
 
-    #[allow(dead_code)]
     pub log_msg: LogMsg,
 }
 
@@ -292,7 +291,7 @@ pub struct JsonEunomiaProgram {
     ptr: Arc<Mutex<EunomiaBpfPtr>>,
 
     #[allow(dead_code)]
-    log_msg: LogMsg,
+    log_msg: Arc<LogMsg>,
 }
 
 impl JsonEunomiaProgram {
@@ -300,7 +299,7 @@ impl JsonEunomiaProgram {
     fn new(ptr: EunomiaBpfPtr, log_msg: LogMsg) -> Self {
         Self {
             ptr: Arc::new(Mutex::new(ptr)),
-            log_msg,
+            log_msg: Arc::new(log_msg),
         }
     }
     // TODO: ?
@@ -313,58 +312,19 @@ impl JsonEunomiaProgram {
 #[derive(Clone)]
 #[allow(unused)]
 pub struct LogMsg {
-    pub stdout: LogMsgInner,
-    pub stderr: LogMsgInner,
+    pub stdout: ReadableWritePipe<Cursor<Vec<u8>>>,
+    pub stderr: ReadableWritePipe<Cursor<Vec<u8>>>,
 }
 
-#[derive(Clone)]
-pub struct LogMsgInner {
-    pub pipe: ReadableWritePipe<Cursor<Vec<u8>>>,
-    // TODO: multi connection?
-    position: usize,
+pub trait ReadLog {
+    /// get all log msg
+    fn read_log_all(&self) -> Result<String, std::string::FromUtf8Error>;
 }
 
-// impl LogMsgInner {
-//     pub fn read(&mut self) -> String {
-//         let guard = self.pipe.get_read_lock();
-//         let read_len = self.position;
-
-//         let vec_ref = guard.get_ref();
-
-//         if vec_ref.len() > read_len {
-//             let freezed = String::from_utf8(vec_ref[read_len..].to_vec()).unwrap();
-//             self.position = vec_ref.len();
-//             return freezed;
-//         } else {
-//             return String::default();
-//         };
-//     }
-// }
-
-impl Iterator for LogMsgInner {
-    type Item = u8;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let cursor = self.pipe.get_read_lock();
-
-        let bytes = cursor.get_ref();
-
-        if self.position >= bytes.len() {
-            return None;
-        }
-
-        let byte = bytes[self.position];
-        self.position += 1;
-        Some(byte)
-    }
-}
-
-impl LogMsgInner {
-    pub fn read_all(&self) -> Result<String, std::string::FromUtf8Error> {
-        let cursor = self.pipe.get_read_lock();
-        let bytes = cursor.get_ref().clone();
-
-        String::from_utf8(bytes)
+impl ReadLog for ReadableWritePipe<Cursor<Vec<u8>>> {
+    fn read_log_all(&self) -> Result<String, std::string::FromUtf8Error> {
+        let log = self.get_read_lock().get_ref().to_vec();
+        String::from_utf8(log)
     }
 }
 
@@ -373,16 +333,7 @@ impl LogMsg {
         stdout: ReadableWritePipe<Cursor<Vec<u8>>>,
         stderr: ReadableWritePipe<Cursor<Vec<u8>>>,
     ) -> Self {
-        Self {
-            stdout: LogMsgInner {
-                pipe: stdout,
-                position: 0,
-            },
-            stderr: LogMsgInner {
-                pipe: stderr,
-                position: 0,
-            },
-        }
+        Self { stdout, stderr }
     }
 }
 

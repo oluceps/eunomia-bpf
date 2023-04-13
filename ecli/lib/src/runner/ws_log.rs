@@ -1,8 +1,17 @@
-use std::time::{Duration, Instant};
+use std::io::{Cursor, Seek, SeekFrom};
+use std::{
+    thread,
+    time::{Duration, Instant},
+};
 
 use actix::{Actor, ActorContext, AsyncContext, StreamHandler};
+use actix_web::web;
 use actix_web_actors::ws;
+use log::info;
 
+use crate::runner::utils::ReadLog;
+
+use super::server::AppState;
 use super::utils::ServerData;
 
 /// How often heartbeat pings are sent
@@ -12,8 +21,31 @@ const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct LogWs {
-    pub data: ServerData,
+    pub data: web::Data<AppState>,
     pub hb: Instant,
+}
+
+impl LogWs {
+    fn get_stdout_log(&self) {
+        loop {
+            thread::sleep(Duration::from_secs(1));
+
+            let a = data
+                .server
+                .lock()
+                .unwrap()
+                .wasm_tasks
+                .get(&0)
+                .unwrap()
+                .log_msg
+                .stdout
+                .get_read_lock()
+                .clone();
+
+            print!("{}", String::from_utf8(a.get_ref().to_vec()).unwrap());
+            // drop(a)
+        }
+    }
 }
 
 impl Actor for LogWs {
@@ -109,25 +141,51 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for LogWs {
 
                 match prog_type {
                     crate::config::ProgramType::WasmModule => {
-                        let log_inner = self
-                            .data
-                            .wasm_tasks
-                            .get(&prog_id)
-                            .unwrap()
-                            .log_msg
-                            .stdout
-                            .clone();
-
-                        let mut buffer = MsgBuf::new();
+                        // let stdout = self
+                        //     .data
+                        //     .wasm_tasks
+                        //     .get(&prog_id)
+                        //     .unwrap()
+                        //     .log_msg
+                        //     .stdout
+                        //     .clone();
 
                         if follow {
-                            for u in log_inner.clone().into_iter() {
-                                if buffer.msg_filled(&u) {
-                                    ctx.text(buffer.to_string())
-                                }
+                            for _ in 0..2 {
+                                thread::sleep(Duration::from_secs(3));
+
+                                info!("hey");
+
+                                let stdout = self
+                                    .data
+                                    .wasm_tasks
+                                    .get(&prog_id)
+                                    .unwrap()
+                                    .log_msg
+                                    .stdout
+                                    .clone();
+
+                                let stdout = stdout.get_read_lock();
+                                let mut buffer = MsgBuf::new();
+                                let log = String::from_utf8(stdout.get_ref().to_vec());
+                                ctx.text(log.unwrap());
+                                drop(stdout)
                             }
+                            // loop {
+                            // thread::sleep(Duration::from_secs(3));
+                            // info!("sendding");
+                            // ctx.text("testAFIAJELIGJLIAEGLVFA")
+                            // }
                         } else {
-                            ctx.text(log_inner.read_all().unwrap());
+                            let stdout = self
+                                .data
+                                .wasm_tasks
+                                .get(&prog_id)
+                                .unwrap()
+                                .log_msg
+                                .stdout
+                                .read_log_all();
+                            ctx.text(stdout.unwrap());
                             ctx.close(Some(ws::CloseReason {
                                 code: ws::CloseCode::Normal,
                                 description: Some("Transport complete".to_string()),

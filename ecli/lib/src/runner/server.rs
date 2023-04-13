@@ -1,4 +1,5 @@
-use std::time::Instant;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use actix_web::{get, post, HttpRequest};
 use actix_web::{web, App, HttpServer, Responder, Result};
@@ -9,7 +10,7 @@ use crate::runner::models::ListGet200ResponseTasksInner;
 use crate::runner::response::*;
 use crate::runner::utils::*;
 use log::info;
-use tokio::sync::Mutex;
+use std::sync::Mutex;
 
 pub struct AppState {
     server: Mutex<ServerData>,
@@ -48,7 +49,7 @@ async fn list_get(data: web::Data<AppState>) -> Result<impl Responder> {
     info!("Recieved List request");
     // info!("list_get() - X-Span-ID: {:?}", context.get().0.clone());
 
-    let server_data = data.server.lock().await;
+    let server_data = data.server.lock().unwrap();
 
     let listed_info: Vec<ListGet200ResponseTasksInner> = server_data.list_all_task();
 
@@ -77,7 +78,7 @@ async fn start_post(
 
     let startup_elem = start_req.0;
 
-    let mut server_data = data.server.lock().await;
+    let mut server_data = data.server.lock().unwrap();
 
     let prog_type = startup_elem
         .program_type
@@ -115,7 +116,7 @@ async fn stop_post(
 
     let id = list_get200_response_tasks_inner.id.unwrap();
 
-    let mut server_data = data.server.lock().await;
+    let mut server_data = data.server.lock().unwrap();
 
     let prog_info = server_data
         .prog_info
@@ -138,36 +139,32 @@ async fn log_post(
     req: HttpRequest,
     stream: web::Payload,
 ) -> Result<impl Responder> {
-    // let id = log_post_request.id.unwrap().checked_abs().unwrap() as usize;
+    loop {
+        thread::sleep(Duration::from_secs(1));
 
-    // let mut logs = WsLog::new(false, &mut server_data);
+        let a = data
+            .server
+            .lock()
+            .unwrap()
+            .wasm_tasks
+            .get(&0)
+            .unwrap()
+            .log_msg
+            .stdout
+            .get_read_lock()
+            .clone();
 
-    let server_data = data.server.lock().await.clone();
+        print!("{}", String::from_utf8(a.get_ref().to_vec()).unwrap());
+        // drop(a)
+    }
 
     ws::start(
         LogWs {
-            data: server_data,
+            data,
             hb: Instant::now(),
         },
         &req,
         stream,
     )
-
-    // let prog_type = server_data.get_type_of(id);
-
-    // if prog_type.is_none() {
-    //     return Err(ErrorBadRequest(""));
-    // }
-
-    // let (out, err) = match prog_type.unwrap() {
-    //     ProgramType::WasmModule => {
-    //         let prog = server_data.wasm_tasks.get_mut(&id).unwrap();
-
-    //         let out = prog.log_msg.get_stdout();
-    //         let err = prog.log_msg.get_stderr();
-
-    //         (out, err)
-    //     }
-    //     _ => unimplemented!(),
-    // };
+    // Ok(web::Json(b""))
 }
