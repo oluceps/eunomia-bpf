@@ -325,7 +325,7 @@ pub async fn client_action(args: RemoteArgs) -> EcliResult<()> {
 
             let req = LogPostRequest {
                 id: Some(*id.get(0).unwrap()),
-                follow: false,
+                follow: true,
             };
 
             // send websocket req, contain jsonlized id and if follow log

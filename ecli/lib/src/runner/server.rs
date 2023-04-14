@@ -173,6 +173,6 @@ async fn log_post(
         },
         &req,
         stream,
-    );
-    Ok(web::Json(b""))
+    )
+    // Ok(web::Json(b""))
 }

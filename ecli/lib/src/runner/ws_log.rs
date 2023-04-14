@@ -122,7 +122,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for LogWs {
                 match prog_type {
                     crate::config::ProgramType::WasmModule => {
                         if follow {
-                            for _ in 0..2 {
+                            for _ in 0..5 {
                                 thread::sleep(Duration::from_secs(3));
 
                                 info!("hey");
