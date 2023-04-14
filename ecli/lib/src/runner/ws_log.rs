@@ -13,7 +13,7 @@ use log::info;
 use crate::runner::utils::ReadLog;
 
 use super::server::AppState;
-use super::utils::ServerData;
+use super::utils::{LogMsg, ServerData};
 
 /// How often heartbeat pings are sent
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
@@ -22,7 +22,7 @@ const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct LogWs {
-    pub data: ServerData,
+    pub data: web::Data<AppState>,
     pub hb: Instant,
 }
 
@@ -115,9 +115,9 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for LogWs {
 
                 let follow = bool::try_from(json_msg["follow"].as_bool().unwrap()).unwrap();
 
-                // let prog_type = crate::config::ProgramType::WasmModule;
+                let prog_type = crate::config::ProgramType::WasmModule;
 
-                let prog_type = self.data.get_type_of(prog_id).unwrap();
+                // let prog_type = self.data;
 
                 match prog_type {
                     crate::config::ProgramType::WasmModule => {
@@ -127,20 +127,20 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for LogWs {
 
                                 info!("hey");
 
-                                let stdout = self
-                                    .data
-                                    .wasm_tasks
-                                    .get(&prog_id)
-                                    .unwrap()
-                                    .log_msg
-                                    .stdout
-                                    .clone();
+                                // let stdout = self
+                                //     .data
+                                //     .wasm_tasks
+                                //     .get(&prog_id)
+                                //     .unwrap()
+                                //     .log_msg
+                                //     .stdout
+                                //     .clone();
 
-                                let stdout = stdout.get_read_lock();
-                                let mut buffer = MsgBuf::new();
-                                let log = String::from_utf8(stdout.get_ref().to_vec());
-                                ctx.text(log.unwrap());
-                                drop(stdout)
+                                // let stdout = stdout.get_read_lock();
+                                // let mut buffer = MsgBuf::new();
+                                // let log = String::from_utf8(stdout.get_ref().to_vec());
+                                // ctx.text(log.unwrap());
+                                // drop(stdout)
                             }
                             // loop {
                             // thread::sleep(Duration::from_secs(3));

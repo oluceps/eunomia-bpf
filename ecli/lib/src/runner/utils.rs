@@ -227,16 +227,14 @@ impl ServerData {
 
     pub async fn stop_prog(
         &mut self,
-        id: i32,
+        id: usize,
         prog_info: (String, ProgramType),
     ) -> Result<StopPostResponse, EcliError> {
         let (prog_name, prog_type) = prog_info;
 
         match prog_type {
             ProgramType::JsonEunomia => {
-                let task = self
-                    .json_tasks
-                    .remove(&(id.checked_abs().unwrap() as usize));
+                let task = self.json_tasks.remove(&id);
                 if let Some(t) = task {
                     if t.stop().await.is_ok() {
                         return Ok(StopPostResponse::gen_rsp(
@@ -247,15 +245,13 @@ impl ServerData {
                 return Ok(StopPostResponse::gen_rsp("fail to terminate"));
             }
             ProgramType::WasmModule => {
-                let task = self
-                    .wasm_tasks
-                    .remove(&(id.checked_abs().unwrap() as usize));
+                let task = self.wasm_tasks.remove(&id);
 
                 if let Some(t) = task {
                     let handler = t.handler.lock().await;
 
                     if handler.terminate().is_ok() {
-                        self.prog_info.remove(&(id.checked_abs().unwrap() as usize));
+                        self.prog_info.remove(&id);
                         return Ok(StopPostResponse::gen_rsp(
                             format!("{} terminated", &prog_name).as_str(),
                         ));

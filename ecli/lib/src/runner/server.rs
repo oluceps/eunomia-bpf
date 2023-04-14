@@ -2,6 +2,7 @@ use std::io::Cursor;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use actix::Addr;
 use actix_web::{get, post, HttpRequest};
 use actix_web::{web, App, HttpServer, Responder, Result};
 use actix_web_actors::ws;
@@ -11,27 +12,26 @@ use crate::runner::models::ListGet200ResponseTasksInner;
 use crate::runner::response::*;
 use crate::runner::utils::*;
 use log::info;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, MutexGuard};
 
-pub struct AppState {
-    server: Mutex<ServerData>,
-}
+pub struct AppState(Mutex<ServerData>);
 
 impl AppState {
-    fn new() -> Self {
-        Self {
-            server: Mutex::new(ServerData::new()),
-        }
+    fn new() -> Arc<Self> {
+        Arc::new(Self(Mutex::new(ServerData::new())))
+    }
+    fn get_lock(&self) -> MutexGuard<ServerData> {
+        self.0.lock().unwrap()
     }
 }
 
 pub async fn create(dst: crate::runner::Dst, _https: bool) -> std::io::Result<()> {
-    let state = web::Data::new(AppState::new());
+    let state = AppState::new();
 
     HttpServer::new(move || {
         // move counter into the closure
         App::new()
-            .app_data(state.clone()) // <- register the created data
+            .app_data(web::Data::from(Arc::clone(&state))) // <- register the created data
             .service(list_get)
             .service(start_post)
             .service(stop_post)
@@ -50,7 +50,7 @@ async fn list_get(data: web::Data<AppState>) -> Result<impl Responder> {
     info!("Recieved List request");
     // info!("list_get() - X-Span-ID: {:?}", context.get().0.clone());
 
-    let server_data = data.server.lock().unwrap();
+    let server_data = data.get_lock();
 
     let listed_info: Vec<ListGet200ResponseTasksInner> = server_data.list_all_task();
 
@@ -79,7 +79,7 @@ async fn start_post(
 
     let startup_elem = start_req.0;
 
-    let mut server_data = data.server.lock().unwrap();
+    let mut server_data = data.get_lock();
 
     let prog_type = startup_elem
         .program_type
@@ -109,19 +109,17 @@ async fn start_post(
 #[post("/stop")]
 async fn stop_post(
     data: web::Data<AppState>,
-    list_get200_response_tasks_inner: web::Json<ListGet200ResponseTasksInner>,
+    list_req: web::Json<ListGet200ResponseTasksInner>,
 ) -> Result<impl Responder> {
     // let context = context.clone();
     info!("Recieved stop command, but has not fully implemented");
-    info!("stop with id: {:?}", &list_get200_response_tasks_inner.id);
+    info!("stop with id: {:?}", &list_req.id);
 
-    let id = list_get200_response_tasks_inner.id.unwrap();
+    let id = list_req.id.unwrap().checked_abs().unwrap() as usize;
 
-    let mut server_data = data.server.lock().unwrap();
+    let mut server_data = data.get_lock();
 
-    let prog_info = server_data
-        .prog_info
-        .remove(&(id.checked_abs().unwrap() as usize));
+    let prog_info = server_data.prog_info.remove(&id);
 
     if prog_info.is_none() {
         return Ok(web::Json(StopPostResponse::gen_rsp("NotFound")));
@@ -130,24 +128,6 @@ async fn stop_post(
     Ok(web::Json(
         server_data.stop_prog(id, prog_info.unwrap()).await.unwrap(),
     ))
-}
-trait GetLog {
-    fn get_wasm_log(&self, id: usize) -> Cursor<Vec<u8>>;
-}
-
-impl GetLog for web::Data<AppState> {
-    fn get_wasm_log(&self, id: usize) -> Cursor<Vec<u8>> {
-        self.server
-            .lock()
-            .unwrap()
-            .wasm_tasks
-            .get(&id)
-            .unwrap()
-            .log_msg
-            .stdout
-            .get_read_lock()
-            .clone()
-    }
 }
 
 use crate::runner::ws_log::LogWs;
@@ -158,17 +138,9 @@ async fn log_post(
     req: HttpRequest,
     stream: web::Payload,
 ) -> Result<impl Responder> {
-    // loop {
-    //     thread::sleep(Duration::from_secs(1));
-
-    //     let a = data.get_wasm_log(0);
-    //     print!("{}", String::from_utf8(a.get_ref().to_vec()).unwrap());
-    //     // drop(a)
-    // }
-
     ws::start(
         LogWs {
-            data: data.server.lock().unwrap().clone(),
+            data,
             hb: Instant::now(),
         },
         &req,
