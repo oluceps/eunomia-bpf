@@ -1,3 +1,4 @@
+use std::io::Cursor;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -130,6 +131,24 @@ async fn stop_post(
         server_data.stop_prog(id, prog_info.unwrap()).await.unwrap(),
     ))
 }
+trait GetLog {
+    fn get_wasm_log(&self, id: usize) -> Cursor<Vec<u8>>;
+}
+
+impl GetLog for web::Data<AppState> {
+    fn get_wasm_log(&self, id: usize) -> Cursor<Vec<u8>> {
+        self.server
+            .lock()
+            .unwrap()
+            .wasm_tasks
+            .get(&id)
+            .unwrap()
+            .log_msg
+            .stdout
+            .get_read_lock()
+            .clone()
+    }
+}
 
 use crate::runner::ws_log::LogWs;
 /// get log
@@ -139,32 +158,21 @@ async fn log_post(
     req: HttpRequest,
     stream: web::Payload,
 ) -> Result<impl Responder> {
-    loop {
-        thread::sleep(Duration::from_secs(1));
+    // loop {
+    //     thread::sleep(Duration::from_secs(1));
 
-        let a = data
-            .server
-            .lock()
-            .unwrap()
-            .wasm_tasks
-            .get(&0)
-            .unwrap()
-            .log_msg
-            .stdout
-            .get_read_lock()
-            .clone();
-
-        print!("{}", String::from_utf8(a.get_ref().to_vec()).unwrap());
-        // drop(a)
-    }
+    //     let a = data.get_wasm_log(0);
+    //     print!("{}", String::from_utf8(a.get_ref().to_vec()).unwrap());
+    //     // drop(a)
+    // }
 
     ws::start(
         LogWs {
-            data,
+            data: data.server.lock().unwrap().clone(),
             hb: Instant::now(),
         },
         &req,
         stream,
-    )
-    // Ok(web::Json(b""))
+    );
+    Ok(web::Json(b""))
 }

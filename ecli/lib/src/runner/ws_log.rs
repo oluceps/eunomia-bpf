@@ -1,4 +1,5 @@
 use std::io::{Cursor, Seek, SeekFrom};
+use std::sync::{Arc, Mutex};
 use std::{
     thread,
     time::{Duration, Instant},
@@ -21,31 +22,8 @@ const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct LogWs {
-    pub data: web::Data<AppState>,
+    pub data: ServerData,
     pub hb: Instant,
-}
-
-impl LogWs {
-    fn get_stdout_log(&self) {
-        loop {
-            thread::sleep(Duration::from_secs(1));
-
-            let a = data
-                .server
-                .lock()
-                .unwrap()
-                .wasm_tasks
-                .get(&0)
-                .unwrap()
-                .log_msg
-                .stdout
-                .get_read_lock()
-                .clone();
-
-            print!("{}", String::from_utf8(a.get_ref().to_vec()).unwrap());
-            // drop(a)
-        }
-    }
 }
 
 impl Actor for LogWs {
@@ -137,19 +115,12 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for LogWs {
 
                 let follow = bool::try_from(json_msg["follow"].as_bool().unwrap()).unwrap();
 
+                // let prog_type = crate::config::ProgramType::WasmModule;
+
                 let prog_type = self.data.get_type_of(prog_id).unwrap();
 
                 match prog_type {
                     crate::config::ProgramType::WasmModule => {
-                        // let stdout = self
-                        //     .data
-                        //     .wasm_tasks
-                        //     .get(&prog_id)
-                        //     .unwrap()
-                        //     .log_msg
-                        //     .stdout
-                        //     .clone();
-
                         if follow {
                             for _ in 0..2 {
                                 thread::sleep(Duration::from_secs(3));
@@ -177,15 +148,15 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for LogWs {
                             // ctx.text("testAFIAJELIGJLIAEGLVFA")
                             // }
                         } else {
-                            let stdout = self
-                                .data
-                                .wasm_tasks
-                                .get(&prog_id)
-                                .unwrap()
-                                .log_msg
-                                .stdout
-                                .read_log_all();
-                            ctx.text(stdout.unwrap());
+                            // let stdout = self
+                            //     .data
+                            //     .wasm_tasks
+                            //     .get(&prog_id)
+                            //     .unwrap()
+                            //     .log_msg
+                            //     .stdout
+                            //     .read_log_all();
+                            // ctx.text(stdout.unwrap());
                             ctx.close(Some(ws::CloseReason {
                                 code: ws::CloseCode::Normal,
                                 description: Some("Transport complete".to_string()),
