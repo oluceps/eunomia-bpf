@@ -14,6 +14,7 @@ pub enum ExportFormatType {
     ExportPlantText,
 }
 
+#[derive(Clone, Debug)]
 pub enum ProgramType {
     Undefine,
     JsonEunomia,
@@ -43,7 +44,6 @@ pub struct ProgramConfigData {
     pub url: String,
     pub use_cache: bool,
     pub btf_path: Option<String>,
-    //program data buffer: wasm module or json
     pub program_data_buf: Vec<u8>,
     pub extra_arg: Vec<String>,
     pub prog_type: ProgramType,
@@ -63,7 +63,7 @@ impl ProgramConfigData {
             program_data_buf: prog_buf,
             extra_arg: args.extra_arg.clone(),
             btf_path: btf_dir_path,
-            prog_type: ProgramType::Undefine,
+            prog_type: args.prog_type.clone(),
             export_format_type: if args.export_to_json {
                 ExportFormatType::ExportJson
             } else {
