@@ -171,7 +171,7 @@ pub async fn run(arg: RunArgs) -> EcliResult<()> {
     }
 }
 
-pub struct Dst(String, u16);
+pub struct Dst(pub String, pub u16);
 impl ToString for Dst {
     fn to_string(&self) -> String {
         format!("{}:{}", self.0, self.1)
@@ -197,7 +197,7 @@ pub async fn start_server(args: RemoteArgs) -> EcliResult<()> {
     Ok(())
 }
 
-use reqwest::Client;
+pub use reqwest::Client;
 
 use self::models::{LogPost200Response, LogPostRequest};
 
