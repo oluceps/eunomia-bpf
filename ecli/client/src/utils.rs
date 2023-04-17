@@ -76,6 +76,7 @@ impl TryFrom<Action> for ClientArgs {
                     id: cmd.id,
                     addr: c.opts.addr,
                     port: c.opts.port,
+                    follow: cmd.follow,
                     ..Default::default()
                 }),
                 // ClientSubCommand::Pause(cmd) => Ok(Self {
