@@ -13,8 +13,6 @@ use crate::runner::models::{ListGet200ResponseTasksInner, LogPostRequest};
 use crate::runner::response::*;
 use crate::runner::utils::*;
 use actix_web::error::ErrorBadRequest;
-use actix_web::{get, post};
-use actix_web::{web, App, HttpServer, Responder, Result};
 use log::info;
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -29,7 +27,7 @@ impl AppState {
     }
 }
 
-pub async fn create(dst: crate::runner::Dst, _https: bool) -> std::io::Result<()> {
+pub async fn create(dst: crate::runner::Dst) -> std::io::Result<()> {
     let state = AppState::new();
 
     HttpServer::new(move || {
