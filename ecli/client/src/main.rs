@@ -4,6 +4,8 @@
 //! All rights reserved.
 //!
 use clap::{Parser, Subcommand};
+use signal_hook::{consts::SIGINT, iterator::Signals};
+use std::{process, thread};
 
 mod utils;
 
@@ -17,14 +19,47 @@ use lib::{
     runner::{client_action, run},
     ClientCmd, Signals, SIGINT,
 };
+use runner::run;
 use std::process;
 use std::thread;
 
-#[derive(Parser)]
-struct Args {
-    #[command(subcommand)]
-    action: Action,
+#[derive(Subcommand)]
+pub enum Action {
+    Run {
+        #[arg(long, short = 'n')]
+        no_cache: Option<bool>,
+        #[arg(long, short = 'j')]
+        json: Option<bool>,
+        #[arg(allow_hyphen_values = true)]
+        prog: Vec<String>,
+    },
+
+    Push {
+        #[arg(long, short, default_value_t = ("app.wasm").to_string())]
+        module: String,
+        #[arg()]
+        image: String,
+    },
+
+    Pull {
+        #[arg(short, long, default_value_t = ("app.wasm").to_string())]
+        output: String,
+        #[arg()]
+        image: String,
+    },
+
+    Login {
+        #[arg()]
+        url: String,
+    },
+
+    Logout {
+        #[arg()]
+        url: String,
+    },
 }
+// use runner::start_server;
+use runner::{client_action, run, start_server};
 
 /// ecli subcommands, including run, push, pull, login, logout.
 #[derive(Subcommand)]
@@ -74,6 +109,64 @@ pub enum Action {
         url: String,
     },
 }
+fn init_log() {
+    let mut builder = Builder::from_default_env();
+    builder.target(Target::Stdout);
+    builder.init();
+}
+
+#[derive(Parser)]
+pub struct ClientCmd {
+    #[clap(subcommand)]
+    cmd: ClientSubCommand,
+
+    #[clap(flatten)]
+    opts: ClientOpts,
+}
+
+#[derive(Parser)]
+enum ClientSubCommand {
+    #[clap(name = "start", about = "start an ebpf programs on endpoint")]
+    Start(StartCommand),
+
+    #[clap(name = "stop", about = "stop running tasks on endpoint with id")]
+    Stop(StopCommand),
+
+    #[clap(name = "list", about = "list the ebpf programs running on endpoint")]
+    List,
+}
+
+#[derive(Parser)]
+struct ClientOpts {
+    #[clap(short, long, help = "endpoint", default_value = "127.0.0.1")]
+    endpoint: String,
+
+    #[clap(short, long, help = "enpoint port", default_value = "8527")]
+    port: u16,
+
+    #[clap(short, long, help = "transport with https", default_value = "false")]
+    secure: bool,
+}
+
+#[derive(Parser)]
+struct StartCommand {
+    #[clap(required = true)]
+    prog: Vec<String>,
+    #[clap(long)]
+    extra_args: Option<Vec<String>>,
+}
+
+#[derive(Parser)]
+struct StopCommand {
+    #[clap(required = true)]
+    id: Vec<i32>,
+}
+
+fn init_log() {
+    let mut builder = Builder::from_default_env();
+    builder.target(Target::Stdout);
+    builder.init();
+}
 
 #[tokio::main]
 async fn main() -> EcliResult<()> {
@@ -99,5 +192,6 @@ async fn main() -> EcliResult<()> {
         Action::Login { url } => login(url).await,
         Action::Logout { url } => logout(url),
         Action::Client(..) => client_action(args.action.try_into()?).await,
+        Action::Server { .. } => start_server(args.action.try_into()?).await,
     }
 }
